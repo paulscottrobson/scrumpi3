@@ -18,110 +18,103 @@
 //														   Timing
 // *******************************************************************************************************************************
 
-#define CYCLE_RATE 		(1*1000*1000)												// Cycles per second (0.96Mhz)
+#define CYCLE_RATE 		(3510000)													// Cycles per second (0.96Mhz)
 #define FRAME_RATE		(60)														// Frames per second (50 arbitrary)
 #define CYCLES_PER_FRAME (CYCLE_RATE / FRAME_RATE)									// Cycles per frame (20,000)
+
+// *******************************************************************************************************************************
+//													SC/MP I/O Lines
+// *******************************************************************************************************************************
+
+static void writeIOFlags(BYTE8 flags) {
+
+}
+
+static BYTE8 readSenseLines(void) {
+	return 0;
+}
+
 
 // *******************************************************************************************************************************
 //														CPU / Memory
 // *******************************************************************************************************************************
 
-static BYTE8 a,x,y,s;																// 6502 A,X,Y and Stack registers
-static BYTE8 carryFlag,interruptDisableFlag,breakFlag,								// Values representing status reg
-			 decimalFlag,overflowFlag,sValue,zValue;
-static WORD16 pc;																	// Program Counter.
+#define addAddress(a,b) 	(((a) & 0xF000) | (((a)+(b)) & 0xFFF)) 					// 4/12 bit Add macro.
+#define branch(a)  	p0 = (a)														// Execute a branch
+
+#include "scmp/scmp_autocode.h"
 static BYTE8 ramMemory[RAMSIZE];													// Memory at $0000 upwards
 static LONG32 cycles;																// Cycle Count.
+static BYTE8 operand;
 
 // *******************************************************************************************************************************
 //											 Memory and I/O read and write macros.
 // *******************************************************************************************************************************
 
-#define Read(a) 	_Read(a)														// Basic Read
-#define Write(a,d)	_Write(a,d)														// Basic Write
+#define readByte(a) 	_Read(a)													// Basic Read
+#define writeByte(a,d)	_Write(a,d)													// Basic Write
 
-#define ReadWord(a) (Read(a) | ((Read((a)+1) << 8)))								// Read 16 bit, Basic
+#define addCycles(n)  	cycles += (n)												// Bump cycle counter
 
-#define ReadWord01(a) (ramMemory[a]+(ramMemory[(a+1)] << 8))						// Read 16 bit, page 0/1 
-#define Read01(a) 	(ramMemory[a])													// Read 8 bit, page 0/1
-#define Write01(a,d) { ramMemory[a] = (d); }										// Write 8 bit, page 0/1
+#define Fetch() 	_Read(++p0)														// Fetch byte
 
-#define Cycles(n) 	cycles += (n)													// Bump Cycles
-
-#define Fetch() 	_Read(pc++)														// Fetch byte
-#define FetchWord()	{ temp16 = Fetch();temp16 |= (Fetch() << 8); }					// Fetch word
 
 static inline BYTE8 _Read(WORD16 address);											// Need to be forward defined as 
 static inline void _Write(WORD16 address,BYTE8 data);								// used in support functions.
-
-#include "6502/__6502support.h"
 
 // *******************************************************************************************************************************
 //											   Read and Write Inline Functions
 // *******************************************************************************************************************************
 
 static inline BYTE8 _Read(WORD16 address) {
-	return ramMemory[address];							
+	address &= 0xFFF; 																// only 12 bits relevant.
+	if (address < 0xC00 || address >= 0xF80) return ramMemory[address];				// RAM, ROM, 8154 RAM.
+	if ((address >> 8) == 0xE) return ramMemory[address];							// Video RAM.
+	if ((address >> 8) == 0xC) return 0;											// Cxx Keyboard
+	if ((address >> 8) == 0xD) return HWReadUART(address & 0xFF);					// UART (D00-DFF)
+	if ((address >> 7) == 0x1E) return HWRead8154(address & 0x7F);					// NS8154 (F00-F7F)
+	return 0x00;																	// Return float low lines.
+
 }
 
 static inline void _Write(WORD16 address,BYTE8 data) {
-	if (address < 0xA000) {															// RAM 0000-A000
-		ramMemory[address] = data;
-		return; 
-	}
-	if (address >= 0xD000 && address <= 0xD800) { 									// Write to vram
-		if (ramMemory[address] != data) { 											// color ram
-			ramMemory[address] = data; 												// control register
-			HWWriteDisplay(address,data);
-		}	
-		return;
-	}
-	if (address == 0xDF00) { 														// Write to keyboard
-		ramMemory[0xDF00] = HWWriteKeyboard(data);
-	}
+	address &= 0xFFF; 																// only 12 bits relevant.
+	if (address < 0xC00 || address >= 0xF80) ramMemory[address] = data;				// RAM, ROM, 8154 RAM.
+	if ((address >> 8) == 0xE) ramMemory[address] = data;							// Video RAM.
+	if ((address >> 8) == 0xD) return HWWriteUART(address & 0xFF,data);				// UART (D00-DFF)
+	if ((address >> 7) == 0x1E) return HWWrite8154(address & 0x7F,data);			// NS8154 (F00-F7F)
 }
 
+
 // *******************************************************************************************************************************
-//														Reset the CPU
+//														BIOS
 // *******************************************************************************************************************************
 
-#include "basic_rom.inc"
-#include "monitor_rom.inc"
+#include "scrumpi3_bios.h"
 
 #ifdef INCLUDE_DEBUGGING_SUPPORT
 static void CPULoadChunk(FILE *f,BYTE8* memory,int count);
 #endif
 
+// *******************************************************************************************************************************
+//														Reset the CPU
+// *******************************************************************************************************************************
+
+
 void CPUReset(void) {
 
-	HWReset();																		// Reset Hardware
-	int romSize = sizeof(monitor_rom);
-	for (int i = 0;i < romSize;i++) ramMemory[0x10000+i-romSize] = monitor_rom[i];	// Copy ROM images in
-	for (int i = 0;i < 8192;i++) ramMemory[0xA000+i] = basic_rom[i];
+	int romSize = sizeof(_biosROM);
+	for (int i = 0;i < romSize;i++) ramMemory[i] = _biosROM[i];						// Copy ROM images in
 
 
 	#ifdef INCLUDE_DEBUGGING_SUPPORT 												// In Debug versions can
 	FILE *f = fopen("monitor.rom","rb"); 											// read in new ROMs if in
 	if (f != NULL) {																// current directory.
-		CPULoadChunk(f,ramMemory+0xF800,0x800);
-		fclose(f);
-	}
-	f = fopen("basic.rom","rb");
-	if (f != NULL) {
-		CPULoadChunk(f,ramMemory+0xA000,0x2000);
+		CPULoadChunk(f,ramMemory,0x800);
 		fclose(f);
 	}
 	#endif
 
-	if (ramMemory[0xA000] == 0x39 && ramMemory[0xA001] == 0xA6 && 					// If standard BASIC.
-		ramMemory[0xA002] == 0x55 && ramMemory[0xA003] == 0xA5)
-
-	{
-		if (ramMemory[0xF800] == 0) {												// New monitor ?
-			ramMemory[0xA27E] = ramMemory[0xFFE3];
-			ramMemory[0xA27F] = ramMemory[0xFFE4];
-		}
-	}
 	resetProcessor();																// Reset CPU
 }
 
@@ -139,17 +132,25 @@ void CPUExit(void) {}
 #endif
 
 // *******************************************************************************************************************************
+//												Handle long delay 
+// *******************************************************************************************************************************
+
+static void longDelay(BYTE8 operand,BYTE8 a) {
+
+}
+
+// *******************************************************************************************************************************
 //												Execute a single instruction
 // *******************************************************************************************************************************
 
 BYTE8 CPUExecuteInstruction(void) {
 	BYTE8 opcode = Fetch();															// Fetch opcode.
+	if (opcode & 0x80) operand = Fetch();
 	switch(opcode) {																// Execute it.
-		#include "6502/__6502opcodes.h"
+		#include "scmp/scmp_opcodes.h"
 	}
 	if (cycles < CYCLES_PER_FRAME) return 0;										// Not completed a frame.
 	cycles = cycles - CYCLES_PER_FRAME;												// Adjust this frame rate.
-	HWSync();																		// Update any hardware
 	return FRAME_RATE;																// Return frame rate.
 }
 
@@ -158,11 +159,11 @@ BYTE8 CPUExecuteInstruction(void) {
 // *******************************************************************************************************************************
 
 BYTE8 CPUReadMemory(WORD16 address) {
-	return Read(address);
+	return readByte(address);
 }
 
 void CPUWriteMemory(WORD16 address,BYTE8 data) {
-	Write(address,data);
+	writeByte(address,data);
 }
 
 #ifdef INCLUDE_DEBUGGING_SUPPORT
@@ -176,8 +177,8 @@ BYTE8 CPUExecute(WORD16 breakPoint1,WORD16 breakPoint2) {
 	do {
 		BYTE8 r = CPUExecuteInstruction();											// Execute an instruction
 		if (r != 0) return r; 														// Frame out.
-		next = CPUReadMemory(pc);
-	} while (pc != breakPoint1 && pc != breakPoint2 && next != 0x03);				// Stop on breakpoint or $03 break
+		next = CPUReadMemory(p0+1);
+	} while (p0+1 != breakPoint1 && p0+1 != breakPoint2 && next != 0x00);			// Stop on breakpoint or HALT
 	return 0; 
 }
 
@@ -186,8 +187,8 @@ BYTE8 CPUExecute(WORD16 breakPoint1,WORD16 breakPoint2) {
 // *******************************************************************************************************************************
 
 WORD16 CPUGetStepOverBreakpoint(void) {
-	BYTE8 opcode = CPUReadMemory(pc);												// Current opcode.
-	if (opcode == 0x20) return (pc+3) & 0xFFFF;										// Step over JSR.
+	BYTE8 opcode = CPUReadMemory(p0+1);												// Current opcode.
+	if (opcode == 0x3F) return (p0+2) & 0xFFFF;										// Step over JSR.
 	return 0;																		// Do a normal single step
 }
 
@@ -221,10 +222,9 @@ void CPULoadBinary(char *fileName) {
 static CPUSTATUS st;																	// Status area
 
 CPUSTATUS *CPUGetStatus(void) {
-	st.a = a;st.x = x;st.y = y;st.sp = s;st.pc = pc;
-	st.carry = carryFlag;st.interruptDisable = interruptDisableFlag;st.zero = (zValue == 0);
-	st.decimal = decimalFlag;st.brk = breakFlag;st.overflow = overflowFlag;
-	st.sign = (sValue & 0x80) != 0;st.status = constructFlagRegister();
+	st.a = a;st.e = e;
+	st.p0 = p0;st.p1 = p1;st.p2 = p2;st.p3 = p3;
+	st.s = constructStatus();
 	st.cycles = cycles;
 	return &st;
 }

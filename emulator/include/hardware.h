@@ -12,14 +12,9 @@
 #ifndef _HARDWARE_H
 #define _HARDWARE_H
 
-#ifdef ESP32
-void HWWriteCharacter(BYTE8 x,BYTE8 y,BYTE8 ch,BYTE8 colour);
-int HWGetScanCode(void);
-#endif
-
-void HWReset(void);
-void HWSync(void);
-BYTE8 HWWriteKeyboard(BYTE8 pattern);
-void HWWriteDisplay(WORD16 address,BYTE8 data);
+void HWWrite8154(BYTE8 offset,BYTE8 data);
+BYTE8 HWRead8154(BYTE8 offset);
+void HWWriteUART(BYTE8 offset,BYTE8 data);
+BYTE8 HWReadUART(BYTE8 offset);
 
 #endif

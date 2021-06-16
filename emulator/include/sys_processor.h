@@ -12,7 +12,7 @@
 #ifndef _PROCESSOR_H
 #define _PROCESSOR_H
 
-#define RAMSIZE 		(65536)														// 32k in Windows
+#define RAMSIZE 		(4096)														// 32k in Windows
 
 typedef unsigned short WORD16;														// 8 and 16 bit types.
 typedef unsigned char  BYTE8;
@@ -20,7 +20,6 @@ typedef unsigned int   LONG32;														// 32 bit type.
 
 #define DEFAULT_BUS_VALUE (0xFF)													// What's on the bus if it's not memory.
 
-#define AKEY_BACKSPACE	(0x5F)														// Apple Backspace
 
 void CPUReset(void);
 BYTE8 CPUExecuteInstruction(void);
@@ -30,9 +29,9 @@ BYTE8 CPUReadMemory(WORD16 address);
 #ifdef INCLUDE_DEBUGGING_SUPPORT													// Only required for debugging
 
 typedef struct __CPUSTATUS {
-	int a,x,y,sp,pc;
-	int carry,zero,sign,interruptDisable,decimal,brk,overflow,status;
-	int cycles;				
+	int a,e,s;
+	int p0,p1,p2,p3;
+	int cycles;		
 } CPUSTATUS;
 
 CPUSTATUS *CPUGetStatus(void);

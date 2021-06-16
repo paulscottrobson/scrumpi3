@@ -1,7 +1,7 @@
 // *******************************************************************************************************************************
 // *******************************************************************************************************************************
 //
-//		Name:		sys_debug_superboard.c
+//		Name:		sys_debug_scrumpi.c
 //		Purpose:	Debugger Code (System Dependent)
 //		Created:	12th July 2019
 //		Author:		Paul Robson (paul@robsons->org.uk)
@@ -17,9 +17,7 @@
 #include "sys_processor.h"
 #include "debugger.h"
 
-#include "6502/__6502mnemonics.h"
-
-#include "character_rom.inc"
+#include "scmp/scmp_mnemonics.h"
 
 #define DBGC_ADDRESS 	(0x0F0)														// Colour scheme.
 #define DBGC_DATA 		(0x0FF)														// (Background is in main.c)
@@ -31,7 +29,7 @@ static int renderCount = 0;
 //											This renders the debug screen
 // *******************************************************************************************************************************
 
-static const char *labels[] = { "A","X","Y","PC","SP","SR","CY","BK","N","V","B","I","Z","C", NULL };
+static const char *labels[] = { "A","E","S","P0","P1","P2","P3","CY","BK", NULL };
 
 void DBGXRender(int *address,int showDisplay) {
 
@@ -44,9 +42,10 @@ void DBGXRender(int *address,int showDisplay) {
 
 	#define DN(v,w) GFXNumber(GRID(24,n++),v,16,w,GRIDSIZE,DBGC_DATA,-1)			// Helper macro
 
-	DN(s->a,2);DN(s->x,2);DN(s->y,2);DN(s->pc,4);DN(s->sp+0x100,4);DN(s->status,2);DN(s->cycles,4);
+	DN(s->a,2);DN(s->e,2);DN(s->s,2);
+	DN(s->p0,4);DN(s->p1,4);DN(s->p2,4);DN(s->p3,4);
+	DN(s->cycles,4);
 	DN(address[3],4);
-	DN(s->sign,1);DN(s->overflow,1);DN(s->brk,1);DN(s->interruptDisable,1);DN(s->zero,1);DN(s->carry,1);
 
 	n = 0;
 	int a = address[1];																// Dump Memory.
@@ -58,12 +57,12 @@ void DBGXRender(int *address,int showDisplay) {
 		}		
 	}
 
-	int p = address[0];																// Dump program code. 
+	int p = address[0]+1;															// Dump program code. 
 	int opc;
 
 	for (int row = 0;row < 14;row++) {
-		int isPC = (p == ((s->pc) & 0xFFFF));										// Tests.
-		int isBrk = (p == address[3]);
+		int isPC = (p == ((s->p0+1) & 0xFFFF));										// Tests.
+		int isBrk = (p == (address[3]+1) & 0xFFFF);
 		GFXNumber(GRID(0,row),p,16,4,GRIDSIZE,isPC ? DBGC_HIGHLIGHT:DBGC_ADDRESS,	// Display address / highlight / breakpoint
 																	isBrk ? 0xF00 : -1);
 		opc = CPUReadMemory(p);p = (p + 1) & 0xFFFF;								// Read opcode.
@@ -74,16 +73,6 @@ void DBGXRender(int *address,int showDisplay) {
 			if (at[1] == '1') {
 				sprintf(hex,"%02x",CPUReadMemory(p));
 				p = (p+1) & 0xFFFF;
-			}
-			if (at[1] == '2') {
-				sprintf(hex,"%02x%02x",CPUReadMemory(p+1),CPUReadMemory(p));
-				p = (p+2) & 0xFFFF;
-			}
-			if (at[1] == 'r') {
-				int addr = CPUReadMemory(p);
-				p = (p+1) & 0xFFFF;
-				if ((addr & 0x80) != 0) addr = addr-256;
-				sprintf(hex,"%04x",addr+p);
 			}
 			strcpy(temp,buffer);
 			strcpy(temp+(at-buffer),hex);
@@ -113,24 +102,6 @@ void DBGXRender(int *address,int showDisplay) {
 		{
 			for (int y = 0;y < ys;y++)
 		 	{
-		 		int start = 0xD00B;
-		 		int ch = CPUReadMemory(start+x+y*64);
-		 		int xc = x1 + x * 8 * xSize;
-		 		int yc = y1 + y * 8 * ySize;
-		 		SDL_Rect rc;
-		 		int cp = ch * 8;
- 				int col = 0xF80;
-		 		rc.w = xSize;rc.h = ySize;														// Width and Height of pixel.
-		 		for (int x = 0;x < 8;x++) {														// 5 Across
-		 			rc.x = xc + x * xSize;
-		 			for (int y = 0;y < 8;y++) {													// 7 Down
-		 				int f = character_rom[cp+y];
-		 				rc.y = yc + y * ySize;
-		 				if (f & (0x80 >> x)) {		
-		 					GFXRectangle(&rc,col);			
-		 				}
-		 			}
-		 		}
 		 	}
 		}
 	}

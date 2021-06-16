@@ -46,7 +46,7 @@ hCode:close()
 
 hMnemonics = io.open("scmp_mnemonics.h","w")
 mnelist = '"'..table.concat(mnemonics,'","',0,255)..'"'
-hMnemonics:write("static char *_mnemonics[256] = { "..mnelist.."};")
+hMnemonics:write("static const char *_mnemonics[256] = { "..mnelist.."};")
 hMnemonics:close()
 
 hCase = io.open("scmp_opcodes.h","w")
