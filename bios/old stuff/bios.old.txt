@@ -1,0 +1,137 @@
+
+;       Normally P2 is $F80. We do not initialise it because the first thing we do is $01 (CLS) which does it for us :)
+;
+
+p2Value equ 15*256+128                                                                         ; where P2 normally points to.
+VideoRam equ 14*256
+cursor set 0                                                                          ; screen cursor position.
+
+	cpu	sc/mp
+        nop                                                                             ; empty byte at $0x00
+        ldi     (BootPrompt - 1) & 0xFF                                                 ; set P3 so it points to the boot prompt message
+        xpal    p3                                                                      ; so it is a bit like we did load Print Inline -> P3 then an XPPC 3.
+;
+;       Print string following this inline in code.
+;
+;       This is not re-entrant.
+;
+PrintStringInline:                                                                      
+        ldi     (PrintCharacter - 1) & 0xFF                                             ; copy P3 (points to string) into P1, set P3 to Print Character routine at same time
+        xpal    p3
+        xpal    p1 
+        ldi     (PrintCharacter - 1) / 256
+        xpah    p3
+        xpah    p1                              
+_PSILLoop:
+        ld      @1(p1)                                                                  ; on entry it will point to the XPPC 3 so skip over that.
+        ld      0(p1)                                                                   ; read the character
+        xppc    p3                                                                      ; print it using the print character string.
+        ld      0(p1)                                                                   ; re read it.
+        xri     0x04                                                                    ; is it $04 (end of line)
+        jnz     _PSILLoop                                                               ; if not, print the next character.
+        xppc    p1                                                                      ; and exit
+
+BootPrompt:
+        db      01,"SCRUMPI 3",13,4                                                     ; Clear screen, message, CR, end.
+
+Main:   ldi     (PrintCharacter - 1) & 255
+        xpal    p3
+        ldi     (PrintCharacter - 1) / 256
+        xpah    p3
+        ild     1(p2)
+        ani     0x3F
+        ccl
+        adi     0x20
+        xppc    p3
+        dly     12
+        jmp      Main
+
+;
+;       Print character in A. Do not use P1. Supports 01 (CLR) 0D (CR) 08 (BS) 20-5F and 80-FF
+;
+;       on entry P2 = $F40 unless you are initially doing a clear screen, in which case it is not necessary.
+;
+PrintCharacter:
+        jp      _PCCheckControl                                                         ; check control etc. if A is 00-7F.
+        scl                                                                             ; subtract $20
+        cai     0x20                                                                    ; cancels out the next bit.
+
+_PCDisplay:                                                                             ; display character stored in A.
+        ccl
+        adi     0x20                                                                    ; add $20 back on - undoes the CAI when checking 00-7F codes.
+        xae                                                                             ; save character in A.
+        ld      cursor(p2)                                                              ; read the cursor position.
+        xpal    p2                                                                      ; put in P2.L
+        ldi     VideoRAM/256                                                            ; point P2.H to Screen
+        xpah    p2                                                                      
+        lde                                                                             ; restore printing character
+        st      @1(p2)                                                                  ; store on screen and advance cursor by 1.
+        xpal    p2                                                                      ; restore the new cursor position to A.
+_PCSaveCursorAndExit:
+        jz      _PCScrollScreen                                                         ; reached TOS without CLR, so must now scroll.
+_PCSaveCursorAndExitNoScroll:
+        xpal    p2                                                                      ; save cursor position in P2.L
+        ldi     p2Value / 256                                                           ; set P2 to its default value, $F40
+        xpah    p2                                                                      ; now pointing to the variables again.
+        ldi     p2Value & 255
+        xpal    p2                                                                      ; this restores the cursor position to A
+        st      cursor(p2)                                                              ; save at the new cursor position
+_PCExit:
+        xppc    p3                                                                      ; exit
+        jmp     PrintCharacter                                                          ; make it reentrant.
+
+_PCCheckControl:
+        scl
+        cai     0x20                                                                    ; subtract 0x20
+        jp      _PCDisplay                                                              ; if +VE it is 20-7F so print it normally.
+
+_PCIsControl:
+        xri     1 ! 0xE0                                                                ; is it CHR(1), clear screen.
+        jz      _PCClearScreen
+        xri     1 ! 8                                                                   ; is it CHR(8), back space.
+        jz      _PCBackSpace
+        xri     8 ! 13                                                                  ; exit if not CHR(13) carriage return.
+        jnz     _PCExit 
+
+        ld      cursor(p2)                                                              ; read the current cursor position.
+        xpal    p2                                                                      ; point P2 to the current cursor position.
+        ldi     VideoRAM/256                                                            
+        xpah    p2                                                                      
+_PCCarriageReturn:
+        ldi     '-'                                                                     ; write a blank and bump the pointer.
+        st      @1(p2)
+        xpal    p2                                                                      ; copy P2.L into E.
+        xae
+        lde
+        xpal    p2
+        lde                                                                             ; restore P2.L 
+        ani     0x1F                                                                    ; reached end of a line.
+        jnz     _PCCarriageReturn                                                       ; if not, keep going until you have.
+        lde                                                                             ; get the new cursor position
+        jmp     _PCSaveCursorAndExit                                                    ; save cursor, allowing for scrolling.
+
+_PCBackSpace:
+        ld      cursor(p2)                                                              ; read cursor position.
+        jz      _PCExit                                                                 ; if at zero, then exit now.
+        dld     cursor(p2)                                                              ; new cursor position, back spacing.
+        jmp     _PCExit
+
+_PCClearScreen:
+        ldi     VideoRAM/256                                                            ; point P2 to Video RAM.
+        xpah    p2
+        ldi     0x0
+_PCClearLoop:
+        xpal    p2                                                                      ; save position in P2.L
+        ldi     ' '                                                                     ; put space on sceen.
+        st      @1(p2)
+        xpal    p2                                                                      ; get low address
+        jnz     _PCClearLoop                                                            ; go back if not zero, screen not clear.
+        jmp     _PCSaveCursorAndExitNoScroll                                            ; exit without doing the scroll test - cursor position 00.                                              
+
+_PCScrollScreen:                                                                        ; scroll the whole screen up as at bottom line.
+        jmp     _PCScrollScreen
+
+
+
+
+

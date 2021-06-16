@@ -1,0 +1,5 @@
+#!/bin/bash
+asl -q -L bios.asm
+p2bin -r 0-2047 bios.p
+lua bintoh.lua
+

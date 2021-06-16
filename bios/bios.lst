@@ -1,0 +1,1388 @@
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 1 - 16/06/21 09:55:47
+
+
+       1/       0 :                     ; *******************************************************************************************************************************
+       2/       0 :                     ; *******************************************************************************************************************************
+       3/       0 :                     ;
+       4/       0 :                     ;                                             SCRUMPI 3 ROM (White Room Rewrite)
+       5/       0 :                     ;                                             ==================================
+       6/       0 :                     ;
+       7/       0 :                     ;                      Written by Paul Robson 26-28 February 2014. Based on designs by John H. Miller-Kirkpatrick
+       8/       0 :                     ;
+       9/       0 :                     ; *******************************************************************************************************************************
+      10/       0 :                     ; *******************************************************************************************************************************
+      11/       0 :                     ;
+      12/       0 :                     ;       0FC0-0FDF       Stack (32 bytes)
+      13/       0 :                     ;       0FE0-0FE7       Labels (8 bytes)
+      14/       0 :                     ;       0FE8            Current Cursor position.
+      15/       0 :                     ;       0FE9            Count Byte for Displays 
+      16/       0 :                     ;       0FEA,B          Implant current address (Monitor only)
+      17/       0 :                     ;       0FEC            Char printed at start of implant line print (Monitor only)
+      18/       0 :                     ;       0FED-0FF6       Not used at present.
+      19/       0 :                     ;       0FF7-0FFF       Storage for Registers (Monitor only)
+      20/       0 :                     ;
+      21/       0 :                     ;       SC/MP Pointer Registers [P3.H,P3.L,P2.H,P2.L,P1.H,P1.L,E,S,A]
+      22/       0 :                     ;
+      23/       0 :                     ;
+      24/       0 :                     ;       P1 general usage (many routines preserve this)
+      25/       0 :                     ;       P2 stack
+      26/       0 :                     ;       P3 call/return address
+      27/       0 :                     ;
+      28/       0 :                     
+      29/       0 : =$C00               keyboardPort =  12 * 256                                                ; Keyboard port is at $xC00
+      30/       0 : =$D00               uartPort =      13 * 256                                                ; UART is at $xD00
+      31/       0 : =$E00               videoRAM =      14 * 256                                                ; Video RAM is at $xE00 
+      32/       0 : =$F80               systemRAM =     15 * 256 + 128                                          ; System RAM is at $xF80
+      33/       0 :                     
+      34/       0 : =$FF7               registerBase =  15 * 256 + 247                                          ; where the registers come/go
+      35/       0 : =$E0                stackBase = 14 * 16
+      36/       0 :                     
+      37/       0 :                     ;
+      38/       0 :                     ;       110 Baud TTY Speed Calculation
+      39/       0 :                     ;
+      40/       0 :                     ;       110 Baud = 110Hz.
+      41/       0 :                     ;       CPU Cycles = 3.51Mhz / 2
+      42/       0 :                     ;       110 Baud delay is 3,510,000/110 = 31,909 Cycles.
+      43/       0 :                     ;       Delay time is (31909-13)/514 which is exactly 62.
+      44/       0 :                     ;
+      45/       0 : =$3E                baud110Delay = 62                                                       ; required value for 110 baud delay.
+      46/       0 :                     
+      47/       0 :                     ;
+      48/       0 :                     ;       UART code is completely speculative. The only thing we actually know is that it is an AY-5-1013. This
+      49/       0 :                     ;       chip has no fixed registers but it does have three access pins. 
+      50/       0 :                     ;
+      51/       0 :                     ;       Pin 4 : Received Data Enable is a logic 0 activated port read. I have connected this to A0.
+      52/       0 :                     ;       Pin 23 : Data Strobe is a logic 0 activated port write. I have connected this to A1.
+      53/       0 :                     ;       Pin 16 : Status word Emable is a logic 0 activated status read, I have connected this to A2.
+      54/       0 :                     ;
+      55/       0 : =$DF0               uartPortBase = uartPort + 240                                           ; base address for R/W
+      56/       0 :                     
+      57/       0 : =$E                 uartReceivedData = 14                                                   ; (e.g. bit 0 only low)
+      58/       0 : =$D                 uartDataStrobe = 13                                                     ; (e.g. bit 1 only low)
+      59/       0 : =$B                 uartStatusWordEnabled = 11                                              ; (e.g. bit 2 only low)
+      60/       0 :                     
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 2 - 16/06/21 09:55:47
+
+
+      61/       0 : =$1                 uartSWEParityError = 1                                                  ; these are the connected status word bits
+      62/       0 : =$2                 uartSWEFramingError = 2                                                 ; these are just errors.
+      63/       0 : =$4                 uartSWEOverRunError = 4
+      64/       0 :                     
+      65/       0 : =$8                 uartSWEDataAvailable = 8                                                ; logic '1' when data is available to receive.
+      66/       0 : =$10                uartSWETransmitBufferEmpty = 16                                         ; logic '1' when data can be transmitted.
+      67/       0 :                     
+      68/       0 :                     ;
+      69/       0 :                     ;       System variables I have used
+      70/       0 :                     ;
+      71/       0 : =$68                cursor =        6 * 16 + 8                                              ; cursor position in VDU RAM (1 byte) $0FE8 (offset from RAM)
+      72/       0 : =$FE0               labelArray =    systemRAM + 6 * 16                                      ; label array ($FE0-$FE7)
+      73/       0 :                     
+      74/       0 : =$9                 tempCounter =   9                                                       ; offset from TOS ($FE9)
+      75/       0 : =$A                 implantAddress = 10                                                     ; offset from TOS ($FEA,B)
+      76/       0 : =$C                 charLine = 12                                                           ; character to print in implant (fixes double CR) ($FEC)
+      77/       0 : =$D                 enableEcho = 13                                                         ; if non-zero key read echos.
+      78/       0 :                                             
+      79/       0 :                     ; *******************************************************************************************************************************
+      80/       0 :                     ;
+      81/       0 :                     ;       Disassembly of the code shown in the brochure (first and last 48 bytes of monitor) doesn't tell us much, but we do
+      82/       0 :                     ;       know that the addresses in the second ROM (mapped at x600-x7FF) are all in page 7 (e.g. the ROM is actually at $7600)
+      83/       0 :                     ;       and so is the NS8154 RAM I/O Chip.
+      84/       0 :                     ;
+      85/       0 :                     ;       This doesn't actually matter when the ROM/RAM space is not fully decoded. It also means it's highly likely that
+      86/       0 :                     ;       *everything* is in page 7 - RAM, ROM , 8154, UART, Keyboard Port.
+      87/       0 :                     ;
+      88/       0 :                     ;       So the code is designed to work with that.
+      89/       0 :                     ;
+      90/       0 :                     ; *******************************************************************************************************************************
+      91/       0 :                     ;
+      92/       0 : =$70                romPage = 7 * 16                                                        ; the ROM page it is designed to run in.
+      93/       0 :                     ;                                                                        
+      94/       0 :                     ; used throughout, mostly in loading upper addresses, to make code run where it actually should (7000-7FFF) where the base
+      95/       0 :                     ; system is.
+      96/       0 :                     ;
+      97/       0 :                     ; *******************************************************************************************************************************
+      98/       0 :                     ;
+      99/       0 :                     ;                                                     ROM Monitor Code
+     100/       0 :                     ;
+     101/       0 :                     ; *******************************************************************************************************************************
+     102/       0 :                     ; *******************************************************************************************************************************
+     103/       0 :                     
+     104/       0 :                             cpu     sc/mp
+     105/       0 :                     
+     106/       0 :                     ;
+     107/       0 :                     ;       If this is run from $0000 (as opposed to being at $7000) then it will switch to page 7 when it exists BootPrompt.
+     108/       0 :                     ;
+     109/       0 : 08                          nop                                                             ; first instruction executed is at location 1.
+     110/       1 :                     
+     111/       1 : C4 E0                       ldi     0xE0                                                    ; set stack up to P2.
+     112/       3 : 32                          xpal    p2
+     113/       4 : C4 7F                       ldi     romPage+0xF                                             ; this is right from this point.
+     114/       6 : 36                          xpah    p2                      
+     115/       7 :                     
+     116/       7 : C4 C2                       ldi     (BootPrompt-1) & 0xFF                                   ; make BIOSPrintInLine think we have called it
+     117/       9 : 33                          xpal    p3                                                      ; by putting a fake 'return' address as if we had
+     118/       A : C4 70                       ldi     (BootPrompt-1) / 256 + romPage                          ; done XPPC P3.
+     119/       C : CA 0D                       st      enableEcho(p2)                                          ; set the echo enable flag.
+     120/       E : 37                          xpah    p3                                                      ; but we just fall through.
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 3 - 16/06/21 09:55:47
+
+
+     121/       F :                     
+     122/       F :                     ; *******************************************************************************************************************************
+     123/       F :                     ;
+     124/       F :                     ;                                     Print String following the caller, terminated by $04.
+     125/       F :                     ;
+     126/       F :                     ;                                            Note: this routine is *not* re-entrant.
+     127/       F :                     ;
+     128/       F :                     ; *******************************************************************************************************************************
+     129/       F :                     
+     130/       F :                     BIOSPrintInline:
+     131/       F : C4 76                       ldi     (BIOSPrintCharacter - 1) / 256 + romPage                ; copy P3 (old) to P1, and set up P3 to call PrintCharacter
+     132/      11 : 37                          xpah    p3
+     133/      12 : 35                          xpah    p1
+     134/      13 : C4 9A                       ldi     (BIOSPrintCharacter - 1) & 255        
+     135/      15 : 33                          xpal    p3
+     136/      16 : 31                          xpal    p1                                                      ; after this instruction, P1 points to XPPC 3.
+     137/      17 :                     _PILNextCharacter:
+     138/      17 : C5 01                       ld      @1(p1)                                                  ; go to the next character
+     139/      19 : C1 00                       ld      0(p1)                                                   ; read it.
+     140/      1B : 3F                          xppc    p3                                                      ; print the character.
+     141/      1C : C1 00                       ld      0(p1)                                                   ; re-read the character
+     142/      1E : E4 04                       xri     0x04                                                    ; is it $04 (end of print string)
+     143/      20 : 9C F5                       jnz     _PILNextCharacter                                       ; go back if not.
+     144/      22 : 3D                          xppc    p1                                                      ; P1 points to the $04 terminator, so return will add one (pre-increment)
+     145/      23 :                     BIOSPILEnd:
+     146/      23 :                     
+     147/      23 :                     ; *******************************************************************************************************************************
+     148/      23 :                     ;
+     149/      23 :                     ;                                   Load Registers back in and call P3, then Save Registers
+     150/      23 :                     ;
+     151/      23 :                     ; *******************************************************************************************************************************
+     152/      23 :                     
+     153/      23 :                     LoadRegisters:
+     154/      23 : C0 D3                       ld      registerBase+0                                          ; load P3,P2,P1,E,S,A
+     155/      25 : 37                          xpah    p3
+     156/      26 : C0 D1                       ld      registerBase+1
+     157/      28 : 33                          xpal    p3
+     158/      29 : C0 CF                       ld      registerBase+2
+     159/      2B : 36                          xpah    p2
+     160/      2C : C0 CD                       ld      registerBase+3
+     161/      2E : 32                          xpal    p2
+     162/      2F : C0 CB                       ld      registerBase+4
+     163/      31 : 35                          xpah    p1
+     164/      32 : C0 C9                       ld      registerBase+5
+     165/      34 : 31                          xpal    p1
+     166/      35 : C0 C7                       ld      registerBase+6
+     167/      37 : 01                          xae
+     168/      38 : C0 C5                       ld      registerBase+7
+     169/      3A : 07                          cas
+     170/      3B : C0 C3                       ld      registerBase+8
+     171/      3D :                     
+     172/      3D : 3F                          xppc    p3                                                      ; call whatever code is being run.
+     173/      3E :                      
+     174/      3E :                     SaveRegisters:
+     175/      3E : C8 C0                       st      registerBase+8                                          ; save A,S,E
+     176/      40 : 06                          csa
+     177/      41 : C8 BC                       st      registerBase+7
+     178/      43 : 40                          lde
+     179/      44 : C8 B8                       st      registerBase+6
+     180/      46 :                     
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 4 - 16/06/21 09:55:47
+
+
+     181/      46 : 31                          xpal    p1                                                      ; save P1,P2
+     182/      47 : C8 B4                       st      registerBase+5
+     183/      49 : 35                          xpah    p1
+     184/      4A : C8 B0                       st      registerBase+4
+     185/      4C :                     
+     186/      4C : C4 E0                       ldi     0xE0                                                    ; when saving P2, make P2 point to the stack at $FE0
+     187/      4E : 32                          xpal    p2                                                      
+     188/      4F : C8 AA                       st      registerBase+3
+     189/      51 : C4 7F                       ldi     systemRAM / 256 + romPage                                     
+     190/      53 : 36                          xpah    p2
+     191/      54 : C8 A4                       st      registerBase+2
+     192/      56 :                     
+     193/      56 : C4 0E                       ldi     (BIOSPrintInline-1) & 255                               ; when saving P3, make it point to the BIOSPrintInline routine
+     194/      58 : 33                          xpal    p3
+     195/      59 : C8 9E                       st      registerBase+1                                          
+     196/      5B : C4 70                       ldi     (BIOSPrintInline-1) / 256 + romPage
+     197/      5D : 37                          xpah    p3 
+     198/      5E : C8 98                       st      registerBase+0 
+     199/      60 :                     
+     200/      60 : 3F                          xppc    p3                                                      ; print status dump text.
+     201/      61 : 01 53 43 52 55 4D           db      1,"SCRUMPI 3 STATUS DUMP",13
+               67 : 50 49 20 33 20 53 
+               6D : 54 41 54 55 53 20 
+               73 : 44 55 4D 50 0D    
+     202/      78 : 20 50 33 20 20 20           db      " P3   P2   P1  EX ST AC",13
+               7E : 50 32 20 20 20 50 
+               84 : 31 20 20 45 58 20 
+               8A : 53 54 20 41 43 0D 
+     203/      90 : 04                          db      4
+     204/      91 :                     
+     205/      91 : C4 7F                       ldi     systemRAM/256 + romPage                                 ; point P1 to the registers
+     206/      93 : 35                          xpah    p1
+     207/      94 : C4 F7                       ldi     registerBase & 0xFF
+     208/      96 : 31                          xpal    p1
+     209/      97 :                     
+     210/      97 : C4 02                       ldi     2                                                       ; counter = 2 - it runs 2-11 for the 9 bytes. 
+     211/      99 : CA 09                       st      tempCounter(p2)                                         ; this is deliberate - it is used to decide whether to display a trailing space, or not.
+     212/      9B :                     _REDumpBytes:
+     213/      9B : C4 65                       ldi     (BIOSPrintHexSpace-1) & 0xFF                            ; P3 to point to hex printer, with space.
+     214/      9D : 33                          xpal    p3
+     215/      9E : C4 76                       ldi     (BIOSPrintHexSpace-1) / 256 + romPage
+     216/      A0 : 37                          xpah    p3
+     217/      A1 : C2 09                       ld      tempCounter(p2)                                         ; read counter.
+     218/      A3 : D4 09                       ani     1+8                                                     ; if odd, or 8, print with space.
+     219/      A5 : 9C 02                       jnz     _RESpaceNeeded                                          ; print no space after 2,4 and 6 - the Px.H bytes.
+     220/      A7 :                     
+     221/      A7 : C7 FB                       ld      @BIOSPrintHexNoSpace - BIOSPrintHexSpace(p3)            ; fix call address so points to the no-space printer.
+     222/      A9 :                     _RESpaceNeeded:
+     223/      A9 : C5 01                       ld      @1(p1)                                                  ; read the next byte.
+     224/      AB : 3F                          xppc    p3                                                      ; dump it.
+     225/      AC : AA 09                       ild     tempCounter(p2)                                         ; increment counter
+     226/      AE : E4 0B                       xri     11
+     227/      B0 : 9C E9                       jnz     _REDumpBytes                                            ; until dumped everything out.
+     228/      B2 : C5 C8                       ld      @-0x38(p1)                                              ; make P1 point to 0FC8, the bit where the stack is dumped.
+     229/      B4 : C4 18                       ldi     3*8                                                     ; we are going to do twenty four bytes (e.g. 3 lines)
+     230/      B6 :                     
+     231/      B6 : 90 2E                       jmp     DumpMemory                                              ; Dump the memory out.
+     232/      B8 :                     
+     233/      B8 :                     ; *******************************************************************************************************************************
+     234/      B8 :                     ;
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 5 - 16/06/21 09:55:47
+
+
+     235/      B8 :                     ;                                         Run Program from P1 and Continue (G and C)
+     236/      B8 :                     ;
+     237/      B8 :                     ; *******************************************************************************************************************************
+     238/      B8 :                     
+     239/      B8 : C5 FF               Go:     ld      @-1(p1)                                                 ; going to XPPC 3 so subtract 1 (PC pre-increments)
+     240/      BA : 35                          xpah    p1                                                      ; copy address from P1 into Register memory.
+     241/      BB : CA 17                       st      0x17(p2)
+     242/      BD : 31                          xpal    p1
+     243/      BE : CA 18                       st      0x18(p2)
+     244/      C0 :                     Continue:
+     245/      C0 : C4 22                       ldi     (LoadRegisters - 1) & 0xFF                              ; long jump same page.
+     246/      C2 : 30                          xpal    p0
+     247/      C3 :                     
+     248/      C3 :                     ; *******************************************************************************************************************************
+     249/      C3 :                     ;
+     250/      C3 :                     ;                                       Boot Prompt, go from here to the main options menu
+     251/      C3 :                     ;
+     252/      C3 :                     ; *******************************************************************************************************************************
+     253/      C3 :                     
+     254/      C3 :                     BootPrompt:
+     255/      C3 : 01                          db      01                                                      ; this is the boot up text - the initial call of BIOSPrintInline to do this
+     256/      C4 : 53 43 52 55 4D 50           db      "SCRUMPI 3"                                             ; is faked. $01 is Clear Screen
+               CA : 49 20 33          
+     257/      CD : 20 50 52 3A 31 2E           db      " PR:1.02"                                              ; I added my own little bit :)
+               D3 : 30 32             
+     258/      D5 : 0D                          db      13                                                      ; carriage return.
+     259/      D6 : 04                          db      4                                                       ; end of prompt
+     260/      D7 :                     
+     261/      D7 : 90 34                       jmp     Main
+     262/      D9 :                     
+     263/      D9 :                     ; *******************************************************************************************************************************
+     264/      D9 :                     ;       
+     265/      D9 :                     ;                                                               Show Labels
+     266/      D9 :                     ;
+     267/      D9 :                     ; *******************************************************************************************************************************
+     268/      D9 :                     
+     269/      D9 :                     ShowLabels:
+     270/      D9 : C4 E0                       ldi     labelArray & 255                                        ; point P1 to label array
+     271/      DB : 31                          xpal    p1
+     272/      DC : C4 7F                       ldi     labelArray / 256 + romPage
+     273/      DE : 35                          xpah    p1
+     274/      DF : C4 D8                       ldi     -5*8                                                    ; list 1 line (the number is for following add)
+     275/      E1 :                                                                                             ; falls through to list memory.
+     276/      E1 :                     
+     277/      E1 :                     ; *******************************************************************************************************************************
+     278/      E1 :                     ;
+     279/      E1 :                     ;                                                               List Memory
+     280/      E1 :                     ;
+     281/      E1 :                     ; *******************************************************************************************************************************
+     282/      E1 :                     
+     283/      E1 :                     ListMemory:
+     284/      E1 : 02                          ccl                                                             ; on entry from main loop, A = 0
+     285/      E2 : F4 30                       adi     6*8 
+     286/      E4 :                                                                                             ; falls through to DumpMemory
+     287/      E4 :                     
+     288/      E4 : 98 D2               _Go:    jz      Go                                                      ; allows us to reach Go.
+     289/      E6 :                     
+     290/      E6 :                     ; *******************************************************************************************************************************
+     291/      E6 :                     ;
+     292/      E6 :                     ;                                               Dump A bytes of memory from P1 onwards.
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 6 - 16/06/21 09:55:47
+
+
+     293/      E6 :                     ;
+     294/      E6 :                     ; *******************************************************************************************************************************
+     295/      E6 :                     
+     296/      E6 :                     DumpMemory:
+     297/      E6 : CA 09                       st      tempCounter(p2)                                         ; save in counter byte.
+     298/      E8 :                     _DMMLoop:
+     299/      E8 : C2 09                       ld      tempCounter(p2)                                         ; time for a new line ?
+     300/      EA : D4 07                       ani     7
+     301/      EC : 9C 18                       jnz     _DMMNotNewLine
+     302/      EE :                     
+     303/      EE : C4 9A                       ldi     (BIOSPrintCharacter-1) & 255                            ; print a new line.
+     304/      F0 : 33                          xpal    p3
+     305/      F1 : C4 76                       ldi     (BIOSPrintCharacter-1) / 256 + romPage
+     306/      F3 : 37                          xpah    p3
+     307/      F4 : C4 0D                       ldi     0x0D
+     308/      F6 : 3F                          xppc    p3
+     309/      F7 : C4 60                       ldi     (BIOSPrintHexNoSpace-1) & 255                           ; set up to print the address.
+     310/      F9 : 33                          xpal    p3                                                     
+     311/      FA :                      ;      ldi     (BIOSPrintHexNoSpace-1) / 256 + romPage                 ; Note : on exit of BIOSPrintCharacter P3 already set up (Saves 3 bytes)
+     312/      FA :                      ;      xpah    p3
+     313/      FA :                     
+     314/      FA : 35                          xpah    p1                                                      ; print high byte.
+     315/      FB : 01                          xae
+     316/      FC : 40                          lde
+     317/      FD : 35                          xpah    p1
+     318/      FE : 40                          lde
+     319/      FF : 3F                          xppc    p3
+     320/     100 : 31                          xpal    p1                                                      ; print low byte
+     321/     101 : 01                          xae
+     322/     102 : 40                          lde
+     323/     103 : 31                          xpal    p1
+     324/     104 : 40                          lde
+     325/     105 : 3F                          xppc    p3
+     326/     106 :                     
+     327/     106 :                     _DMMNotNewLine:
+     328/     106 : C5 01                       ld      @1(p1)                                                  ; print a byte
+     329/     108 : 3F                          xppc    p3
+     330/     109 : BA 09                       dld     tempCounter(p2)                                         ; decrement counter
+     331/     10B : 9C DB                       jnz     _DMMLoop                                                ; done the lot, no go back.
+     332/     10D :                     
+     333/     10D :                     ; *******************************************************************************************************************************
+     334/     10D :                     ;               
+     335/     10D :                     ;                                                     Main Command Entry Point
+     336/     10D :                     ;
+     337/     10D :                     ;       Commands :
+     338/     10D :                     ; 
+     339/     10D :                     ;       I xxxx  implant.
+     340/     10D :                     ;       L       show labels
+     341/     10D :                     ;       H xxxx  hex dump.
+     342/     10D :                     ;       G xxxx  run.
+     343/     10D :                     ;       C       continue.
+     344/     10D :                     ;
+     345/     10D :                     ; *******************************************************************************************************************************
+     346/     10D :                     
+     347/     10D : C4 70               Main:   ldi     (BIOSPrintInline-1) / 256 + romPage                     ; Print the 'COMMAND ?' prompt 
+     348/     10F : 37                          xpah    p3
+     349/     110 : C4 0E                       ldi     (BIOSPrintInline-1) & 255
+     350/     112 : 33                          xpal    p3
+     351/     113 : 3F                          xppc    p3
+     352/     114 : 0D 43 4F 4D 4D 41           db      13,"COMMAND ? ",4                                       ; can shorten this if we get really desperate :)
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 7 - 16/06/21 09:55:47
+
+
+              11A : 4E 44 20 3F 20 04 
+     353/     120 :                     
+     354/     120 : C4 75                       ldi     (BIOSReadKey-1) / 256 + romPage                         ; Read a key.
+     355/     122 : 37                          xpah    p3
+     356/     123 : C4 FF                       ldi     (BIOSReadKey-1) & 255                                   
+     357/     125 : 33                          xpal    p3
+     358/     126 : 3F                          xppc    p3
+     359/     127 : CA 09                       st      tempCounter(p2)                                         ; save in counter temp.
+     360/     129 : C4 20                       ldi     ' '                                                     ; BIOS Readkey re-enters into print character so print space
+     361/     12B : 3F                          xppc    p3
+     362/     12C :                     
+     363/     12C : C4 71                       ldi     0x71                                                    ; look at extension ROM at $7200-$75FF
+     364/     12E : 37                          xpah    p3                                                      ; we use $71FF because we jump there using XPPC3.
+     365/     12F : C4 FF                       ldi     0xFF
+     366/     131 : 33                          xpal    p3
+     367/     132 : C3 01                       ld      1(p3)                                                   ; look at first byte to see if there's anything there at all.
+     368/     134 : 98 03                       jz      _CheckCommands                                          ; if it is zero, ignore it.
+     369/     136 : 3F                          xppc    p3                                                      ; jump to $7200
+     370/     137 : 98 D4               _Main:  jz      Main                                                    ; if zero, then go back - command taken by extension ROM.
+     371/     139 :                             
+     372/     139 :                     _CheckCommands:
+     373/     139 :                     
+     374/     139 : C2 09                       ld      tempCounter(p2)                                         ; load keyboard pressed character.
+     375/     13B : E4 43                       xri     'C'                                                     ; if not (C)ontinue then skip the reload and run bit.
+     376/     13D : 98 81                       jz      Continue                                                ; if it is 'C' then continue by reloading registers and running.     
+     377/     13F : E4 0F                       xri     'C' ! 'L'                                               ; check for (L)abel display
+     378/     141 : 98 96                       jz      ShowLabels
+     379/     143 :                     
+     380/     143 : C2 09                       ld      tempCounter(p2)                                         ; get the character again (check for G,H,I)
+     381/     145 : 02                          ccl
+     382/     146 : F4 B6                       adi     255-'I'                                                 ; will be +ve if > I 
+     383/     148 : 94 C3                       jp      Main                                                    ; G,H,I will be -3,-2,-1
+     384/     14A : F4 83                       adi     131                                                     ; this will make them 128,129,130     
+     385/     14C : 94 BF                       jp      Main                    
+     386/     14E :                     
+     387/     14E : C4 25                       ldi     (ReadHexadecimalSet-1) & 0xFF                           ; load a 4 digit hex number into P1.
+     388/     150 : 33                          xpal    p3
+     389/     151 : C4 77                       ldi     (ReadHexadecimalSet-1) / 256 + romPage
+     390/     153 : 37                          xpah    p3
+     391/     154 : C4 04                       ldi     4
+     392/     156 : 3F                          xppc    p3                                                      ; call it
+     393/     157 : 9C B4                       jnz     Main                                                    ; bad value !
+     394/     159 :                     
+     395/     159 : C2 09                       ld      tempCounter(p2)                                         ; reload control character.
+     396/     15B : E4 48                       xri     'H'                                                     ; is it (H)ex Dump
+     397/     15D : 98 82                       jz      ListMemory
+     398/     15F : E4 0F                       xri     'G' ! 'H'                                               ; is it (G)o
+     399/     161 : 98 81                       jz      _Go
+     400/     163 :                     
+     401/     163 :                     ;       xri     'I'!'G'                                                 ; is it (I)mplant [not required with G,H,I test]
+     402/     163 :                     ;       jnz     Main                                                    ; Nope, out of ideas.
+     403/     163 :                     
+     404/     163 :                     ; *******************************************************************************************************************************
+     405/     163 :                     ;
+     406/     163 :                     ;                                                       Implant Code
+     407/     163 :                     ;
+     408/     163 :                     ; *******************************************************************************************************************************
+     409/     163 :                     
+     410/     163 :                     Implant:
+     411/     163 : C4 0D                       ldi     0x0D                                                    ; character to print after this
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 8 - 16/06/21 09:55:47
+
+
+     412/     165 :                     
+     413/     165 :                     _ImpStoreCharacter:
+     414/     165 : CA 0C                       st      charLine(p2)
+     415/     167 :                     
+     416/     167 :                     _ImpUpdate:
+     417/     167 : C1 00                       ld      0(p1)                                                   ; read byte at implant address
+     418/     169 : CA 09                       st      tempCounter(p2)                                         ; save it.
+     419/     16B :                     
+     420/     16B : 31                          xpal    p1                                                      ; save implant address
+     421/     16C : CA 0A                       st      implantAddress(p2)
+     422/     16E : 35                          xpah    p1
+     423/     16F : CA 0B                       st      implantAddress+1(p2)
+     424/     171 :                     
+     425/     171 : C4 9A                       ldi     (BIOSPrintCharacter-1) & 255                            ; print a new line, perhaps.
+     426/     173 : 33                          xpal    p3
+     427/     174 : C4 76                       ldi     (BIOSPrintCharacter-1) / 256 + romPage 
+     428/     176 : 37                          xpah    p3
+     429/     177 : C2 0C                       ld      charLine(p2)                                            ; get character to print.
+     430/     179 : 3F                          xppc    p3
+     431/     17A : C4 60                       ldi     (BIOSPrintHexNoSpace-1) & 255                           ; set up to print the address.
+     432/     17C : 33                          xpal    p3                                                     
+     433/     17D : C4 76                       ldi     (BIOSPrintHexNoSpace-1) / 256 + romPage
+     434/     17F : 37                          xpah    p3
+     435/     180 : C2 0B                       ld      implantAddress+1(p2)                                    ; print the address
+     436/     182 : 3F                          xppc    p3
+     437/     183 : C2 0A                       ld      implantAddress(p2)
+     438/     185 : 3F                          xppc    p3
+     439/     186 : C2 09                       ld      tempCounter(p2)                                         ; and the data that's there.
+     440/     188 : 3F                          xppc    p3
+     441/     189 : C4 0D                       ldi     0x0D
+     442/     18B : CA 0C                       st      charLine(p2)                                            ; set to print CR next time.
+     443/     18D :                     _ImpGet:
+     444/     18D : C4 25                       ldi     (ReadHexadecimalSet-1) & 255                            ; read a 2 byte number
+     445/     18F : 33                          xpal    p3
+     446/     190 : C4 77                       ldi     (ReadHexadecimalSet-1) / 256 + romPage
+     447/     192 : 37                          xpah    p3
+     448/     193 : C4 02                       ldi     2
+     449/     195 : 3F                          xppc    p3
+     450/     196 : 01                          xae                                                             ; store result in E
+     451/     197 :                     
+     452/     197 : C2 0B                       ld      implantAddress+1(p2)                                    ; reload implant address in P1
+     453/     199 : 35                          xpah    p1
+     454/     19A : C2 0A                       ld      implantAddress(p2)
+     455/     19C : 31                          xpal    p1                                                      ; this loads the byte/key code into A
+     456/     19D : 01                          xae                                                             ; now the byte/key code is in E and the error flag in A
+     457/     19E :                                                                                             ; and P1 points to the byte data.
+     458/     19E : 9C 0B                       jnz     _ImpControlKey                                          ; it wasn't a hex number, it was a control key.
+     459/     1A0 :                     
+     460/     1A0 : 40                          lde                                                             ; get byte back
+     461/     1A1 : C9 00                       st      0(p1)                                                   ; write it at the implant address
+     462/     1A3 : 90 E8                       jmp     _ImpGet                                                 ; and get again - you can override or use INT to go to the next line.
+     463/     1A5 :                     
+     464/     1A5 :                     _ImpNext:                                                               ; CR pressed
+     465/     1A5 : C5 01                       ld      @1(p1)                                                 
+     466/     1A7 : C4 04                       ldi     0x04                                                    ; no CR printed otherwise we get double CR
+     467/     1A9 : 90 BA                       jmp     _ImpStoreCharacter
+     468/     1AB :                     
+     469/     1AB :                     _ImpControlKey:                                                         ; P1 = Implant, E = Key.
+     470/     1AB : 40                          lde                                                             ; get key code
+     471/     1AC : E4 3E                       xri    '>'                                                      ; is it go to monitor
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 9 - 16/06/21 09:55:47
+
+
+     472/     1AE : 98 87                       jz      _Main                                                   ; yes, exit.
+     473/     1B0 : E4 33                       xri     0x0D ! '>'                                              ; is it CR
+     474/     1B2 : 98 F1                       jz      _ImpNext                                                ; next byte.
+     475/     1B4 :                     
+     476/     1B4 : 40                          lde                                                             ; save original control in temp Counter
+     477/     1B5 : CA 09                       st      tempCounter(p2)
+     478/     1B7 : E4 3D                       xri     '='                                                     ; check equals or ?
+     479/     1B9 : 98 06                       jz      _ImpIsLabel
+     480/     1BB : E4 02                       xri     '='! '?'                                                
+     481/     1BD : 98 02                       jz      _ImpIsLabel
+     482/     1BF :                     _ImpUpdate2:
+     483/     1BF : 90 A6                       jmp     _ImpUpdate                                              
+     484/     1C1 :                     
+     485/     1C1 :                     _ImpIsLabel:
+     486/     1C1 : C4 FF                       ldi     (BIOSReadKey - 1) & 0xFF                                ; get a key.
+     487/     1C3 : 33                          xpal    p3
+     488/     1C4 : C4 75                       ldi     (BIOSReadKey - 1) / 256 + romPage
+     489/     1C6 : 37                          xpah    p3
+     490/     1C7 : 3F                          xppc    p3                                                      ; get a key value.
+     491/     1C8 :                     
+     492/     1C8 : 01                          xae                                                             ; copy into E
+     493/     1C9 :                     
+     494/     1C9 : C2 0B                       ld      implantAddress+1(p2)                                    ; reload implant address in P1
+     495/     1CB : 35                          xpah    p1
+     496/     1CC : C2 0A                       ld      implantAddress(p2)
+     497/     1CE : 31                          xpal    p1                                                      
+     498/     1CF :                     
+     499/     1CF : 40                          lde                                                             ; get the key value.
+     500/     1D0 : D4 F8                       ani     0xF8                                                    ; check if it is $30-$37 e.g. numbers 0-7
+     501/     1D2 : E4 30                       xri     0x30
+     502/     1D4 : 9C E9                       jnz     _ImpUpdate2                                             ; if not, then fail command.
+     503/     1D6 :                     
+     504/     1D6 : 40                          lde                                                             ; we put the label address in P3 as we won't call anything.
+     505/     1D7 : E4 D0                       xri     0x30 ! (labelArray & 0xFF)                              ; change from 3x to (Label Array)x
+     506/     1D9 : 33                          xpal    p3
+     507/     1DA : C4 7F                       ldi     systemRAM / 256 + romPage
+     508/     1DC : 37                          xpah    p3 
+     509/     1DD :                     
+     510/     1DD : C2 09                       ld      tempCounter(p2)                                         ; get the temporary counter back.
+     511/     1DF : E4 3D                       xri     '='                                                     ; is it equals
+     512/     1E1 : 9C 06                       jnz     _ImpCalculateOffset                                     ; calculate offset from location to here.
+     513/     1E3 :                     
+     514/     1E3 : C2 0A                       ld      implantAddress(p2)                                      ; get the lower byte of the address
+     515/     1E5 : CB 00                       st      0(p3)                                                   ; save in the label area
+     516/     1E7 : 90 D6                       jmp     _ImpUpdate2                                             ; and end command.
+     517/     1E9 :                     
+     518/     1E9 :                     _ImpCalculateOffset:
+     519/     1E9 : C3 00                       ld      0(p3)                                                   ; get label
+     520/     1EB : 02                          ccl
+     521/     1EC : FA 0A                       cad     implantAddress(p2)                                      ; read the LSB.
+     522/     1EE : C9 00                       st      0(p1)                                                   ; store it
+     523/     1F0 : 90 CD                       jmp     _ImpUpdate2     
+     524/     1F2 :                     
+     525/     1F2 :                     ; *******************************************************************************************************************************
+     526/     1F2 :                     ;
+     527/     1F2 :                     ;                                                         1k ROM Space in the middle.
+     528/     1F2 :                     ;
+     529/     1F2 :                     ; *******************************************************************************************************************************
+     530/     1F2 :                     
+     531/     200 :                             org     0x200                                                   ; 0200 - 00 x 1024.
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 10 - 16/06/21 09:55:47
+
+
+     532/     200 : 00 00 00 00 00 00           db      1024 dup (0)
+              206 : 00 00 00 00 00 00 
+              20C : 00 00 00 00 00 00 
+              212 : 00 00 00 00 00 00 
+              218 : 00 00 00 00 00 00 
+              21E : 00 00 00 00 00 00 
+              224 : 00 00 00 00 00 00 
+              22A : 00 00 00 00 00 00 
+              230 : 00 00 00 00 00 00 
+              236 : 00 00 00 00 00 00 
+              23C : 00 00 00 00 00 00 
+              242 : 00 00 00 00 00 00 
+              248 : 00 00 00 00 00 00 
+              24E : 00 00 00 00 00 00 
+              254 : 00 00 00 00 00 00 
+              25A : 00 00 00 00 00 00 
+              260 : 00 00 00 00 00 00 
+              266 : 00 00 00 00 00 00 
+              26C : 00 00 00 00 00 00 
+              272 : 00 00 00 00 00 00 
+              278 : 00 00 00 00 00 00 
+              27E : 00 00 00 00 00 00 
+              284 : 00 00 00 00 00 00 
+              28A : 00 00 00 00 00 00 
+              290 : 00 00 00 00 00 00 
+              296 : 00 00 00 00 00 00 
+              29C : 00 00 00 00 00 00 
+              2A2 : 00 00 00 00 00 00 
+              2A8 : 00 00 00 00 00 00 
+              2AE : 00 00 00 00 00 00 
+              2B4 : 00 00 00 00 00 00 
+              2BA : 00 00 00 00 00 00 
+              2C0 : 00 00 00 00 00 00 
+              2C6 : 00 00 00 00 00 00 
+              2CC : 00 00 00 00 00 00 
+              2D2 : 00 00 00 00 00 00 
+              2D8 : 00 00 00 00 00 00 
+              2DE : 00 00 00 00 00 00 
+              2E4 : 00 00 00 00 00 00 
+              2EA : 00 00 00 00 00 00 
+              2F0 : 00 00 00 00 00 00 
+              2F6 : 00 00 00 00 00 00 
+              2FC : 00 00 00 00 00 00 
+              302 : 00 00 00 00 00 00 
+              308 : 00 00 00 00 00 00 
+              30E : 00 00 00 00 00 00 
+              314 : 00 00 00 00 00 00 
+              31A : 00 00 00 00 00 00 
+              320 : 00 00 00 00 00 00 
+              326 : 00 00 00 00 00 00 
+              32C : 00 00 00 00 00 00 
+              332 : 00 00 00 00 00 00 
+              338 : 00 00 00 00 00 00 
+              33E : 00 00 00 00 00 00 
+              344 : 00 00 00 00 00 00 
+              34A : 00 00 00 00 00 00 
+              350 : 00 00 00 00 00 00 
+              356 : 00 00 00 00 00 00 
+              35C : 00 00 00 00 00 00 
+              362 : 00 00 00 00 00 00 
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 11 - 16/06/21 09:55:47
+
+
+              368 : 00 00 00 00 00 00 
+              36E : 00 00 00 00 00 00 
+              374 : 00 00 00 00 00 00 
+              37A : 00 00 00 00 00 00 
+              380 : 00 00 00 00 00 00 
+              386 : 00 00 00 00 00 00 
+              38C : 00 00 00 00 00 00 
+              392 : 00 00 00 00 00 00 
+              398 : 00 00 00 00 00 00 
+              39E : 00 00 00 00 00 00 
+              3A4 : 00 00 00 00 00 00 
+              3AA : 00 00 00 00 00 00 
+              3B0 : 00 00 00 00 00 00 
+              3B6 : 00 00 00 00 00 00 
+              3BC : 00 00 00 00 00 00 
+              3C2 : 00 00 00 00 00 00 
+              3C8 : 00 00 00 00 00 00 
+              3CE : 00 00 00 00 00 00 
+              3D4 : 00 00 00 00 00 00 
+              3DA : 00 00 00 00 00 00 
+              3E0 : 00 00 00 00 00 00 
+              3E6 : 00 00 00 00 00 00 
+              3EC : 00 00 00 00 00 00 
+              3F2 : 00 00 00 00 00 00 
+              3F8 : 00 00 00 00 00 00 
+              3FE : 00 00 00 00 00 00 
+              404 : 00 00 00 00 00 00 
+              40A : 00 00 00 00 00 00 
+              410 : 00 00 00 00 00 00 
+              416 : 00 00 00 00 00 00 
+              41C : 00 00 00 00 00 00 
+              422 : 00 00 00 00 00 00 
+              428 : 00 00 00 00 00 00 
+              42E : 00 00 00 00 00 00 
+              434 : 00 00 00 00 00 00 
+              43A : 00 00 00 00 00 00 
+              440 : 00 00 00 00 00 00 
+              446 : 00 00 00 00 00 00 
+              44C : 00 00 00 00 00 00 
+              452 : 00 00 00 00 00 00 
+              458 : 00 00 00 00 00 00 
+              45E : 00 00 00 00 00 00 
+              464 : 00 00 00 00 00 00 
+              46A : 00 00 00 00 00 00 
+              470 : 00 00 00 00 00 00 
+              476 : 00 00 00 00 00 00 
+              47C : 00 00 00 00 00 00 
+              482 : 00 00 00 00 00 00 
+              488 : 00 00 00 00 00 00 
+              48E : 00 00 00 00 00 00 
+              494 : 00 00 00 00 00 00 
+              49A : 00 00 00 00 00 00 
+              4A0 : 00 00 00 00 00 00 
+              4A6 : 00 00 00 00 00 00 
+              4AC : 00 00 00 00 00 00 
+              4B2 : 00 00 00 00 00 00 
+              4B8 : 00 00 00 00 00 00 
+              4BE : 00 00 00 00 00 00 
+              4C4 : 00 00 00 00 00 00 
+              4CA : 00 00 00 00 00 00 
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 12 - 16/06/21 09:55:47
+
+
+              4D0 : 00 00 00 00 00 00 
+              4D6 : 00 00 00 00 00 00 
+              4DC : 00 00 00 00 00 00 
+              4E2 : 00 00 00 00 00 00 
+              4E8 : 00 00 00 00 00 00 
+              4EE : 00 00 00 00 00 00 
+              4F4 : 00 00 00 00 00 00 
+              4FA : 00 00 00 00 00 00 
+              500 : 00 00 00 00 00 00 
+              506 : 00 00 00 00 00 00 
+              50C : 00 00 00 00 00 00 
+              512 : 00 00 00 00 00 00 
+              518 : 00 00 00 00 00 00 
+              51E : 00 00 00 00 00 00 
+              524 : 00 00 00 00 00 00 
+              52A : 00 00 00 00 00 00 
+              530 : 00 00 00 00 00 00 
+              536 : 00 00 00 00 00 00 
+              53C : 00 00 00 00 00 00 
+              542 : 00 00 00 00 00 00 
+              548 : 00 00 00 00 00 00 
+              54E : 00 00 00 00 00 00 
+              554 : 00 00 00 00 00 00 
+              55A : 00 00 00 00 00 00 
+              560 : 00 00 00 00 00 00 
+              566 : 00 00 00 00 00 00 
+              56C : 00 00 00 00 00 00 
+              572 : 00 00 00 00 00 00 
+              578 : 00 00 00 00 00 00 
+              57E : 00 00 00 00 00 00 
+              584 : 00 00 00 00 00 00 
+              58A : 00 00 00 00 00 00 
+              590 : 00 00 00 00 00 00 
+              596 : 00 00 00 00 00 00 
+              59C : 00 00 00 00 00 00 
+              5A2 : 00 00 00 00 00 00 
+              5A8 : 00 00 00 00 00 00 
+              5AE : 00 00 00 00 00 00 
+              5B4 : 00 00 00 00 00 00 
+              5BA : 00 00 00 00 00 00 
+              5C0 : 00 00 00 00 00 00 
+              5C6 : 00 00 00 00 00 00 
+              5CC : 00 00 00 00 00 00 
+              5D2 : 00 00 00 00 00 00 
+              5D8 : 00 00 00 00 00 00 
+              5DE : 00 00 00 00 00 00 
+              5E4 : 00 00 00 00 00 00 
+              5EA : 00 00 00 00 00 00 
+              5F0 : 00 00 00 00 00 00 
+              5F6 : 00 00 00 00 00 00 
+              5FC : 00 00 00 00       
+     533/     600 :                             org     0x600                                                   ; 2nd half of the ROM.
+     534/     600 :                                                                                             ; no, I don't know why it's not at $200 either !
+     535/     600 :                     
+     536/     600 :                     ; *******************************************************************************************************************************
+     537/     600 :                     ;
+     538/     600 :                     ;                             Read a Debounced ASCII key from the Keyboard into A and Echo it.
+     539/     600 :                     ;
+     540/     600 :                     ;              Note: this is not re-entrant because it falls through into the BIOSPrintCharacter routine.
+     541/     600 :                     ;
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 13 - 16/06/21 09:55:47
+
+
+     542/     600 :                     ; *******************************************************************************************************************************
+     543/     600 :                     
+     544/     600 :                     BIOSReadKey:
+     545/     600 :                     
+     546/     600 :                     _RKYWaitRelease:                                                        ; wait for all keys to be released.
+     547/     600 : 06                          csa 
+     548/     601 : D4 10                       ani     0x10                                                    ; firstly check SA.
+     549/     603 : 9C FB                       jnz     _RKYWaitRelease 
+     550/     605 : 31                          xpal    p1                                                      ; now point P1 to the keyboard at $C00
+     551/     606 : C4 7C                       ldi     KeyboardPort / 256 + romPage                
+     552/     608 : 35                          xpah    p1
+     553/     609 : C1 0F                       ld      0xF(p1)                                                 ; scan every row and column (reads $C0F)
+     554/     60B : D4 0F                       ani     15                                                      ; the control keys can stay pressed, it doesn't matter.
+     555/     60D : 9C F1                       jnz     _RKYWaitRelease
+     556/     60F :                     
+     557/     60F :                     _RKYDebounceReset:                                                      ; come back here if debounce check fails e.g. not held steady.
+     558/     60F : C4 00                       ldi     0x0                                                     ; reset the current key value
+     559/     611 :                     _RKYStoreCurrentValue:
+     560/     611 : CA FF                       st      -1(p2)                                                  ; save it at next stack level down.
+     561/     613 :                     
+     562/     613 :                     _RKYRecheckKey:
+     563/     613 : C4 03                       ldi     3                                                       ; we start the key count at 3 (because the LHS is the MSB)
+     564/     615 : 01                          xae
+     565/     616 :                     
+     566/     616 : 06                          csa                                                             ; read the state of Sense A.
+     567/     617 : D4 10                       ani     0x10                                                    ; check sense A pressed now $00 No, $10 yes
+     568/     619 : 03                          scl
+     569/     61A : FC 03                       cai     3                                                       ; now $FD now, $0D yes.
+     570/     61C : 94 2B                       jp      _RKYGotASCIIKey                                         ; got the ASCII key ?
+     571/     61E : C4 08                       ldi     0x08                                                    ; start reading $0C08 e.g. the top row.
+     572/     620 :                     _RKYDiscoverRow:
+     573/     620 : 31                          xpal    p1                                                      ; set P1 to point to the row.
+     574/     621 : C1 00                       ld      0(p1)                                                   ; read that row
+     575/     623 : D4 0F                       ani     15                                                      ; look at the 16 key part data only (no shifts)
+     576/     625 : 9C 10                       jnz     _RKYFoundKey                                            ; if a key is non-zero, then we have found a key press
+     577/     627 : 01                          xae                                                             ; add 4 to E (e.g. the next row down)
+     578/     628 : 02                          ccl
+     579/     629 : F4 04                       adi     4
+     580/     62B : 01                          xae
+     581/     62C : 31                          xpal    p1                                                      ; this is the row address e.g. it goes 8,4,2,1
+     582/     62D : 1C                          sr                                                              ; shift it right.
+     583/     62E : 9C F0                       jnz     _RKYDiscoverRow                                         ; if non-zero, there's another row to scan.
+     584/     630 : 90 DD                       jmp     _RKYDebounceReset                                       ; if zero, no key found, so start key scanning again.
+     585/     632 :                     
+     586/     632 :                     _RKYFindBit:
+     587/     632 : 01                          xae                                                             ; decrement E (the Left most key is bit 3)
+     588/     633 : 03                          scl
+     589/     634 : FC 01                       cai     1                                                       ; E must be >= 0 so CY/L is set after this.
+     590/     636 : 01                          xae 
+     591/     637 :                     _RKYFoundKey:                                                           ; found key. key bit is in A, base is in E (0,4,8,12)
+     592/     637 : 1C                          sr                                                              ; shift that bit pattern right.
+     593/     638 : 9C F8                       jnz     _RKYFindBit                                             ; if non-zero, change E and try again.
+     594/     63A : 31                          xpal    p1                                                      ; clear P1.L so it points to $C00 again.
+     595/     63B :                     
+     596/     63B : C1 00                       ld      0(p1)                                                   ; read the keypad again - we're going to shift it now.008
+     597/     63D : D4 70                       ani     0x70                                                    ; mask out the punctuation, and alpha shift keys. (Bits 4,5,6)
+     598/     63F :                                                                                             ; NoShift : $00 Alpha 1 : $10 Alpha 2 : $20 Punc : $40
+     599/     63F :                     
+     600/     63F : E4 40                       xri     0x40                                                    ; NoShift : $40 Alpha 1 : $50 Alpha 2 : $60 Punc : $00
+     601/     641 : 9C 02                       jnz     _RKYNotPunctuation
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 14 - 16/06/21 09:55:47
+
+
+     602/     643 : C4 30                       ldi     0x30                                                    ; set to $30 if $00 (punctuation.)
+     603/     645 :                     _RKYNotPunctuation:                                                     ; NoShift : $40 Alpha 1 : $50 Alpha 2 : $60 Punc : $30
+     604/     645 : 03                          scl
+     605/     646 : FC 10                       cai     0x10                                                    ; NoShift : $30 ('0') Alpha 1 : $40 ('@') Alpha 2 : $50 ('P') Punc : $20(' ')
+     606/     648 : 58                          ore                                                             ; Or the lower 4 bits into it, A now contains the complete character.
+     607/     649 :                     _RKYGotASCIIKey:
+     608/     649 : 01                          xae                                                             ; put back in E.
+     609/     64A :                     
+     610/     64A : C2 FF                       ld      -1(p2)                                                  ; get the current debounce value
+     611/     64C : 60                          xre                                                             ; is it the same as the key just read ?
+     612/     64D : 98 06                       jz      _RKYExit
+     613/     64F : 60                          xre                                                             ; get the current status back.
+     614/     650 : 9C BD                       jnz     _RKYDebounceReset                                       ; if different and non-zero it has not stabilised, so restart.
+     615/     652 : 40                          lde
+     616/     653 : 90 BC                       jmp     _RKYStoreCurrentValue                                   ; store that and go round again until we get 2 non-zero reads the same.
+     617/     655 :                     
+     618/     655 :                     _RKYExit:
+     619/     655 : C4 ED                       ldi     (enableEcho+stackBase) & 255                           ; point P1 to the enable echo flag
+     620/     657 : 31                          xpal    p1
+     621/     658 : C4 7F                       ldi     systemRAM / 256 + romPage     
+     622/     65A : 35                          xpah    p1
+     623/     65B : C1 00                       ld      0(p1)                                                   ; read the flag
+     624/     65D : 9C 3D                       jnz     PrintCharacterInE                                       ; jump into the print character code 
+     625/     65F : 90 6C                       jmp     PRCExitUsingE                                           ; else exit returning E, do it this way and P3 points to BIOS Print.
+     626/     661 :                     
+     627/     661 :                     ; *******************************************************************************************************************************
+     628/     661 :                     ;
+     629/     661 :                     ;                                Print A in Hex, with or without a trailing space. Preserves P1.
+     630/     661 :                     ;
+     631/     661 :                     ;                            Partially re-entrant, if called again always is in trailing space mode.
+     632/     661 :                     ;
+     633/     661 :                     ; *******************************************************************************************************************************
+     634/     661 :                     
+     635/     661 :                     BIOSPrintHexNoSpace:
+     636/     661 : 01                          xae                                                             ; put byte to output in E
+     637/     662 : C4 00                       ldi     0                                                       ; no trailing space.
+     638/     664 : 90 03                       jmp     _PHXMain
+     639/     666 :                     BIOSPrintHexSpace:                                                      
+     640/     666 : 01                          xae                                                             ; put byte to output in E
+     641/     667 : C4 20                       ldi     ' '                                                     ; with trailing space flag.
+     642/     669 :                     _PHXMain:                                                
+     643/     669 : CA FF                       st      -1(p2)                                                  ; save trailing flag on stack
+     644/     66B : C4 76                       ldi     (_PHXPrintHex - 1) / 256 + romPage                      ; save return address in -3(p2),-4(p2)
+     645/     66D : 37                          xpah    p3                                                      ; at the same time point to Print Nibble routine.                                                     
+     646/     66E : CA FD                       st      -3(p2)                                                 
+     647/     670 : C4 93                       ldi     (_PHXPrintHex - 1) & 255
+     648/     672 : 33                          xpal    p3
+     649/     673 : CE FC                       st      @-4(p2)                                                 ; and adjust stack downwards.
+     650/     675 : 40                          lde                                                             ; restore byte to print
+     651/     676 : CA 02                       st      2(p2)                                                   ; save it in stack temp space.
+     652/     678 : 1E                          rr                                                              ; rotate right to get upper nibl.
+     653/     679 : 1E                          rr
+     654/     67A : 1E                          rr
+     655/     67B : 1E                          rr
+     656/     67C : 3F                          xppc    p3                                                      ; print the upper nibble
+     657/     67D : C4 93                       ldi     (_PHXPrintHex-1) & 255                                  ; this is not re-entrant because it tages onto PrintCharacter
+     658/     67F : 33                          xpal    p3
+     659/     680 : C4 76                       ldi     (_PHXPrintHex - 1) / 256 + romPage                      ; however, these 3 bytes could be lost if PrintHex and BIOSPrintChar in same page.
+     660/     682 : 37                          xpah    p3                                                                                                                   
+     661/     683 : C2 02                       ld      2(p2)                                                   ; read byte to print
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 15 - 16/06/21 09:55:47
+
+
+     662/     685 : 3F                          xppc    p3                                                      ; print the lower nibble.
+     663/     686 : C2 03                       ld      3(p2)                                                   ; read trailing flag        
+     664/     688 : 98 01                       jz      _PHXNoTrailer                                           ; skip if zero
+     665/     68A : 3F                          xppc    p3                                                      ; and print that - BIOSPrintCharacter will be used.
+     666/     68B :                     _PHXNoTrailer:
+     667/     68B : C2 01                       ld      1(p2)                                                   ; restore return address
+     668/     68D : 37                          xpah    p3
+     669/     68E : C6 04                       ld      @4(p2)                                                  ; fix the stack back here
+     670/     690 : 33                          xpal    p3
+     671/     691 : 3F                          xppc    p3                                                      ; and exit
+     672/     692 : 90 D2                       jmp     BIOSPrintHexSpace                                       ; re-entrant with trailing space ONLY.
+     673/     694 :                     
+     674/     694 :                     _PHXPrintHex:                                                           ; print A as a Nibble
+     675/     694 : D4 0F                       ani     15                                                      ; mask out nibble
+     676/     696 : 02                          ccl
+     677/     697 :                     
+     678/     697 : EC 90                       dai     0x90                                                    ; hopefully this will work - SC/MP version of Z80 trick.
+     679/     699 :                                                                                             ; 0-9 => 9x, CY/L = 0, A-F, 0x, CY/L = 1
+     680/     699 : EC 40                       dai     0x40                                                    ; 0-9 => 3x,  A-F = 4x+1
+     681/     69B :                                                                                             ; depends on how it actually adds but it works on most CPUs.
+     682/     69B :                                                                                             ; *** FALLS THROUGH ***
+     683/     69B :                     
+     684/     69B :                     ; *******************************************************************************************************************************
+     685/     69B :                     ;
+     686/     69B :                     ;                                        Print the Character in A. Preserves P1 and A.
+     687/     69B :                     ;
+     688/     69B :                     ; *******************************************************************************************************************************
+     689/     69B :                     
+     690/     69B :                     BIOSPrintCharacter:
+     691/     69B : 01                          xae                                                             ; save character to print in E.
+     692/     69C :                     PrintCharacterInE:                                                      ; used by the ReadKey routine.
+     693/     69C : C4 7F                       ldi     systemRAM / 256 + romPage                               ; save P1 on stack, make it point to $0F80
+     694/     69E : 35                          xpah    p1
+     695/     69F : CE FF                       st      @-1(p2)  
+     696/     6A1 : C4 80                       ldi     systemRAM & 255                                        
+     697/     6A3 : 31                          xpal    p1
+     698/     6A4 : CE FF                       st      @-1(p2) 
+     699/     6A6 :                     
+     700/     6A6 : 40                          lde                                                             ; get character to be printed back.
+     701/     6A7 : 02                          ccl                                                             ; add $E0, causes carry if 20-FF
+     702/     6A8 : F4 E0                       adi     0xE0
+     703/     6AA : 06                          csa                                                             ; check the carry bit
+     704/     6AB : 94 24                       jp      _PRCControl                                             ; if clear, it is a control character.
+     705/     6AD :                     
+     706/     6AD : C1 68                       ld      cursor(p1)                                              ; read the current cursor position.
+     707/     6AF : 31                          xpal    p1                                                      ; put in P1.L
+     708/     6B0 : C4 7E                       ldi     videoRAM/256 + romPage                                  ; make P1.H point to video RAM.
+     709/     6B2 : 35                          xpah    p1
+     710/     6B3 : 01                          xae                                                             ; retrieve character from E, save systemRAM in E.
+     711/     6B4 : CD 01                       st      @1(p1)                                                  ; save character in P1
+     712/     6B6 : 01                          xae                                                             ; put it back in E.
+     713/     6B7 :                     
+     714/     6B7 :                     _PRCShowCursorAndSaveCheckScroll:                                       ; show cursor and save position BUT scroll up if at TOS (gone off bottom)
+     715/     6B7 : 31                          xpal    p1                                                      ; scrolling up ?
+     716/     6B8 : 98 4E                       jz      _PRCScroll
+     717/     6BA : 31                          xpal    p1
+     718/     6BB :                     _PRCShowCursorAndSavePosition:
+     719/     6BB : C4 A0                       ldi     0xA0                                                    ; put a cursor (solid block) in the next square
+     720/     6BD : C9 00                       st      0(p1)
+     721/     6BF :                     
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 16 - 16/06/21 09:55:47
+
+
+     722/     6BF : C4 7F                       ldi     SystemRAM / 256 + romPage                               ; make P1 point to System RAM.
+     723/     6C1 : 35                          xpah    p1
+     724/     6C2 : C4 80                       ldi     systemRAM & 255       
+     725/     6C4 : 31                          xpal    p1                                                      ; at the same time retrieve the cursor position into A.
+     726/     6C5 : C9 68                       st      cursor(p1)                                              ; write the cursor position out, updated.
+     727/     6C7 :                     _PRCExit:
+     728/     6C7 : C6 01                       ld      @1(p2)                                                  ; restore P1 off the stack.
+     729/     6C9 : 31                          xpal    p1
+     730/     6CA : C6 01                       ld      @1(p2)
+     731/     6CC : 35                          xpah    p1
+     732/     6CD :                     PRCExitUsingE:
+     733/     6CD : 40                          lde                                                             ; restore printed character from E.
+     734/     6CE : 3F                          xppc    p3                                                      ; and exit the routine.
+     735/     6CF : 90 CA                       jmp     BIOSPrintCharacter                                      ; make it re-entrant.
+     736/     6D1 :                     
+     737/     6D1 :                     _PRCControl:                                                            
+     738/     6D1 : C1 68                       ld      cursor(p1)                                              ; make P1 point to the current video RAM location.
+     739/     6D3 : 31                          xpal    p1
+     740/     6D4 : C4 7E                       ldi     VideoRAM/256 + romPage                                           
+     741/     6D6 : 35                          xpah    p1
+     742/     6D7 : C4 20                       ldi     ' '                                                     ; erase current cursor.
+     743/     6D9 : C9 00                       st      0(p1)           
+     744/     6DB : 40                          lde                                                             ; get character code back.  
+     745/     6DC :                     
+     746/     6DC : E4 01                       xri     0x01                                                    ; test for code $01 (Clear Screen)
+     747/     6DE : 9C 0E                       jnz     _PRCControl2
+     748/     6E0 :                     
+     749/     6E0 :                     _PRCClearScreen:
+     750/     6E0 : 31                          xpal    p1                                                      ; current position in A, to P1.L
+     751/     6E1 : C4 20                       ldi     ' '                                                     ; write space to screen and bump to next.
+     752/     6E3 : CD 01                       st      @1(p1) 
+     753/     6E5 : 31                          xpal    p1                                                      ; has it reached $00 again, e.g. whole screen.
+     754/     6E6 : 9C F8                       jnz     _PRCClearScreen                                         ; not finished clearing yet.
+     755/     6E8 : 31                          xpal    p1                                                      ; p1 points to cursor now (e.g. it is 0) and p1.h is VRAM.
+     756/     6E9 : C4 7E                       ldi     VideoRAM/256 + romPage                                  ; make it point to video RAM again.
+     757/     6EB : 35                          xpah    p1
+     758/     6EC : 90 CD                       jmp     _PRCShowCursorAndSavePosition                           ; reshow the cursor and save the cursor position.
+     759/     6EE :                     
+     760/     6EE :                     _PRCControl2:
+     761/     6EE : E4 0C                       xri     0x01 ! 0x0D                                             ; carriage return ?
+     762/     6F0 : 9C 09                       jnz     _PRCControl3
+     763/     6F2 : 31                          xpal    p1                                                      ; get cursor position in P1.
+     764/     6F3 : D4 E0                       ani     0xE0                                                    ; start of line.
+     765/     6F5 : 02                          ccl
+     766/     6F6 : F4 20                       adi     0x20                                                    ; next line down.
+     767/     6F8 : 31                          xpal    p1                                                      ; save cursor position
+     768/     6F9 : 90 BC                       jmp     _PRCShowCursorAndSaveCheckScroll
+     769/     6FB :                     
+     770/     6FB :                     _PRCControl3:                                                           
+     771/     6FB : E4 05                       xri     0x0D ! 0x08                                             ; is it backspace ($08)
+     772/     6FD : 9C BC                       jnz     _PRCShowCursorAndSavePosition                           ; unknown control character.
+     773/     6FF : 31                          xpal    p1                                                      ; get the cursor position into A.
+     774/     700 : 98 03                       jz      _PRCStayHome                                            ; can't backspace any further, already at 0
+     775/     702 : 02                          ccl                                                             ; subtract 1 from cursor position.
+     776/     703 : F4 FF                       adi     0xFF
+     777/     705 :                     _PRCStayHome:
+     778/     705 : 31                          xpal    p1                                                      ; position back in P1.
+     779/     706 : 90 B3                       jmp     _PRCShowCursorAndSavePosition                           ; do not check for scrolling, but reshow cursor and save.
+     780/     708 :                     
+     781/     708 :                     _PRCScroll:                                                             ; scroll screen up. 
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 17 - 16/06/21 09:55:47
+
+
+     782/     708 : C4 7E                       ldi     VideoRAM/256 + romPage                                  ; point P1.H to video RAM.
+     783/     70A : 35                          xpah    p1
+     784/     70B : C4 20                       ldi     0x20                                                    ; point P1.L to second line.
+     785/     70D :                     _PRCScrollLoop:
+     786/     70D : 31                          xpal    p1                                                      
+     787/     70E : C5 01                       ld      @1(p1)                                                  ; read line above and increment p1 afterwards.
+     788/     710 : C9 DF                       st      -0x21(p1)                                               ; save immediately above, allow for increment
+     789/     712 : 31                          xpal    p1
+     790/     713 : 9C F8                       jnz     _PRCScrollLoop                                          ; on exit P1 = 0xF00.
+     791/     715 : 31                          xpal    p1
+     792/     716 : C5 E0                       ld      @-32(p1)                                                ; fix up P1 to point to bottom line
+     793/     718 : 31                          xpal    p1
+     794/     719 :                     _PRCClearBottom:
+     795/     719 : 31                          xpal    p1                                                      ; clear the bottom line.
+     796/     71A : C4 20                       ldi     ' '
+     797/     71C : CD 01                       st      @1(p1)
+     798/     71E : 31                          xpal    p1
+     799/     71F : 9C F8                       jnz     _PRCClearBottom
+     800/     721 : 31                          xpal    p1
+     801/     722 : C5 E0                       ld      @-32(p1)                                                ; fix it up again so cursor is start of bottom line.
+     802/     724 : 90 95                       jmp     _PRCShowCursorAndSavePosition
+     803/     726 :                     
+     804/     726 :                     ; *******************************************************************************************************************************
+     805/     726 :                     ;
+     806/     726 :                     ;       Attempt to read A hexadecimal digits. If okay : P1.H = <High>, E = <Low>, A = 0
+     807/     726 :                     ;                                             Bad Key : E = Key Number, A != 0
+     808/     726 :                     ;
+     809/     726 :                     ;       (Not Re-Entrant)
+     810/     726 :                     ;
+     811/     726 :                     ; *******************************************************************************************************************************
+     812/     726 :                     
+     813/     726 :                     ReadHexadecimalSet:
+     814/     726 : CE FA                       st      @-6(p2)                                                 ; reserve stack space. offset 0 is the number of nibbles to read.
+     815/     728 : 33                          xpal    p3                                                      ; save return address on stack
+     816/     729 : CA 05                       st      5(p2)
+     817/     72B : 37                          xpah    p3 
+     818/     72C : CA 04                       st      4(p2)
+     819/     72E : C4 00                       ldi     0                                                       ; clear the high byte (2) and low byte (3)
+     820/     730 : CA 02                       st      2(p2)
+     821/     732 : CA 03                       st      3(p2)
+     822/     734 :                     _RHSMain:                                                               ; main read loop.
+     823/     734 : C4 04                       ldi     4
+     824/     736 : CA 01                       st      1(p2)                                                   ; shift the current byte left 4 times.
+     825/     738 :                     _RHSShiftLoop:
+     826/     738 : 02                          ccl
+     827/     739 : C2 03                       ld      3(p2)                                                   ; read low byte
+     828/     73B : F2 03                       add     3(p2)                                                   ; shift into carry.
+     829/     73D : CA 03                       st      3(p2)
+     830/     73F : C2 02                       ld      2(p2)                                                   ; high byte likewise, but inherit carry from low byte.
+     831/     741 : F2 02                       add     2(p2)
+     832/     743 : CA 02                       st      2(p2)
+     833/     745 : BA 01                       dld     1(p2)                                                   ; do it four times
+     834/     747 : 9C EF                       jnz     _RHSShiftLoop
+     835/     749 :                     _RHSGetHexKey:
+     836/     749 : C4 75                       ldi     (BIOSReadKey-1) / 256 + romPage                         ; read and echo a key
+     837/     74B : 37                          xpah    p3
+     838/     74C : C4 FF                       ldi     (BIOSReadKey-1) & 255
+     839/     74E : 33                          xpal    p3
+     840/     74F : 3F                          xppc    p3
+     841/     750 : 02                          ccl
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 18 - 16/06/21 09:55:47
+
+
+     842/     751 : 01                          xae                                                             ; put key in E as temporary store.
+     843/     752 : 40                          lde     
+     844/     753 : F4 B9                       adi     255-'F'                                                 ; is key >= F
+     845/     755 : 94 0F                       jp      _RHSError                                               ; then error.
+     846/     757 : F4 06                       adi     6                                                       ; key will now be 0,1,2,3,4,5 for A-F.
+     847/     759 : 94 07                       jp      _RHSIsAlphabeticHex                                     ; go there if it is.
+     848/     75B : F4 07                       adi     7                                                       ; if +ve will be wrong.
+     849/     75D : 94 07                       jp      _RHSError                                               ; so go back.
+     850/     75F : F4 01                       adi     1                                                       ; shift 0-9 into the correct range when the 9 is added after this.
+     851/     761 : 02                          ccl
+     852/     762 :                     _RHSIsAlphabeticHex:
+     853/     762 : F4 09                       adi     9                                                       ; we know CY/L will be set after the adi 6 that came here.
+     854/     764 : 94 06                       jp      _RHSGotDigit                                            ; if +ve we have a legal digit 0-15.
+     855/     766 :                     
+     856/     766 :                     _RHSError:
+     857/     766 : 40                          lde                                                             ; get the key that was pressed, put in low byte.
+     858/     767 : CA 03                       st      3(p2)   
+     859/     769 : 03                          scl                                                             ; and exit with CY/L set
+     860/     76A : 90 09                       jmp     _RHSExit
+     861/     76C :                     
+     862/     76C :                     _RHSGotDigit:
+     863/     76C : DA 03                       or      3(p2)                                                   ; or into the low byte
+     864/     76E : CA 03                       st      3(p2)
+     865/     770 : BA 00                       dld     0(p2)                                                   ; have we done this four times ?
+     866/     772 : 9C C0                       jnz     _RHSMain                                                ; no, go round again !
+     867/     774 : 02                          ccl                                                             ; we want CY/L clear as it is okay.
+     868/     775 :                     _RHSExit:                                                               ; exit.
+     869/     775 : C6 06                       ld      @6(p2)                                                  ; fix the stack back
+     870/     777 : C2 FF                       ld      -1(p2)
+     871/     779 : 33                          xpal    p3
+     872/     77A : C2 FE                       ld      -2(p2)
+     873/     77C : 37                          xpah    p3   
+     874/     77D : C2 FC                       ld      -4(p2)                                                  ; read high byte, put in P1.H
+     875/     77F : 35                          xpah    p1
+     876/     780 : C2 FD                       ld      -3(p2)                                                  ; read low byte, put in E
+     877/     782 : 31                          xpal    p1 
+     878/     783 : 06                          csa                                                             ; get status
+     879/     784 : D4 80                       ani     0x80                                                    ; isolate carry flag, returns $80 on error.
+     880/     786 : 3F                          xppc    p3                                                      ; and exit.
+     881/     787 :                     
+     882/     787 :                     ; *******************************************************************************************************************************
+     883/     787 :                     ;
+     884/     787 :                     ;                         Put A to Flag 1 as a 110 Baud TTY (1 Start, 8 Data, nothing else), preserves P1
+     885/     787 :                     ;
+     886/     787 :                     ; *******************************************************************************************************************************
+     887/     787 :                     
+     888/     787 :                     BIOSPutTTY:
+     889/     787 : 01                          xae                                                             ; put in E
+     890/     788 : C4 0A                       ldi     10                                                      ; set bit count to 10. Start + 8 Data + Clearing value.
+     891/     78A : CA FF                       st      -1(p2)                                                  ; counter is on stack.
+     892/     78C :                     _PTTYSetLoop:
+     893/     78C : 06                          csa                                                             ; output start bit.
+     894/     78D : DC 02                       ori     0x02 
+     895/     78F :                     _PTTYLoop:
+     896/     78F : 07                          cas                                                             ; write A to S.
+     897/     790 : C4 00                       ldi     0x00                                                    ; delay 110 baud.
+     898/     792 : 8F 3E                       dly     baud110delay                                            
+     899/     794 : BA FF                       dld     -1(p2)                                                  ; decrement the counter
+     900/     796 : 98 0B                       jz      _PTTYExit                                               ; and exit if it is zero.
+     901/     798 : 40                          lde                                                             ; shift E left into the carry/link bit.
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 19 - 16/06/21 09:55:47
+
+
+     902/     799 : 02                          ccl
+     903/     79A : 70                          ade
+     904/     79B : 01                          xae      
+     905/     79C : 06                          csa                                                             ; get the status register, CY/L is bit 7.
+     906/     79D : D4 FD                       ani     0xFD                                                    ; clear the F1 bit, just in case.
+     907/     79F : 94 EE                       jp      _PTTYLoop                                               ; if it is '1' then output to S and delay
+     908/     7A1 : 90 E9                       jmp     _PTTYSetLoop                                            ; otherwise set it to '1' and delay.
+     909/     7A3 :                     _PTTYExit:
+     910/     7A3 : 3F                          xppc    p3                                                      ; exit, this is re-entrant.
+     911/     7A4 : 90 E1                       jmp     BIOSPutTTY
+     912/     7A6 :                     
+     913/     7A6 :                     
+     914/     7A6 :                     ; *******************************************************************************************************************************
+     915/     7A6 :                     ;
+     916/     7A6 :                     ;                              Read SB as a 110 Baud TTY into A (1 start bit, 8 data bits), preserves P1
+     917/     7A6 :                     ;
+     918/     7A6 :                     ; *******************************************************************************************************************************
+     919/     7A6 :                     
+     920/     7A6 :                     BIOSGetTTY:
+     921/     7A6 : C4 00                       ldi     0                                                       ; clear final result in E
+     922/     7A8 : 01                          xae
+     923/     7A9 :                     _GTTYWait:
+     924/     7A9 : 06                          csa                                                             ; wait until SB is logic '1', the start bit.
+     925/     7AA : D4 20                       ani     0x20                    
+     926/     7AC : 98 FB                       jz      _GTTYWait                                               ; done !
+     927/     7AE : 8F 1F                       dly     baud110delay/2                                          ; go to middle of start pulse.
+     928/     7B0 : C4 08                       ldi     8                                                       ; read this many bits.
+     929/     7B2 : CA FF                       st      -1(p2)
+     930/     7B4 :                     _GTTYLoop:
+     931/     7B4 : C4 00                       ldi     0                                                       ; go to the middle of the next pulse.
+     932/     7B6 : 8F 3E                       dly     baud110delay
+     933/     7B8 : 06                          csa                                                             ; read it in.
+     934/     7B9 : D4 20                       ani     0x20                                                    ; mask out SB.
+     935/     7BB : 98 02                       jz      _GTTYSkipSet
+     936/     7BD : C4 01                       ldi     0x1 
+     937/     7BF :                     _GTTYSkipSet:                                                           ; it is now 0 or 1.
+     938/     7BF : 02                          ccl
+     939/     7C0 : 70                          ade                                                             ; E = E * 2 + A (e.g. shift the bit in.)
+     940/     7C1 : 70                          ade
+     941/     7C2 : 01                          xae                                                             ; put it back in E
+     942/     7C3 : BA FF                       dld     -1(p2)                                                  ; do it 8 times
+     943/     7C5 : 9C ED                       jnz     _GTTYLoop                                       
+     944/     7C7 : 8F 9B                       dly     baud110delay*5/2                                        ; ignore any stop bits and allow short delay
+     945/     7C9 : 01                          xae                                                             ; get the result
+     946/     7CA : 3F                          xppc    p3                                                      ; return
+     947/     7CB : 90 D9                       jmp     BIOSGetTTY                                              ; get the TTY
+     948/     7CD :                     
+     949/     7CD :                     ; *******************************************************************************************************************************
+     950/     7CD :                     ;
+     951/     7CD :                     ;                               Read a byte from the UART to A. On exit CY/L => error, , preserves P1
+     952/     7CD :                     ;
+     953/     7CD :                     ; *******************************************************************************************************************************
+     954/     7CD :                     
+     955/     7CD :                     BIOSGetART:        
+     956/     7CD : C4 7D                       ldi     uartPortBase / 256 + romPage                            ; we set P2 to point to the UART for writing
+     957/     7CF : 36                          xpah    p2
+     958/     7D0 : C4 F0                       ldi     uartPortBase & 255                              
+     959/     7D2 : 32                          xpal    p2                                                      ; we can use E to save P2.L 
+     960/     7D3 : 01                          xae                                                             ; which saves stacking/destacking P1.
+     961/     7D4 :                     _GARWait:
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 20 - 16/06/21 09:55:47
+
+
+     962/     7D4 : C2 0B                       ld      uartStatusWordEnabled(p2)                               ; read the status word
+     963/     7D6 : D4 08                       ani     uartSWEDataAvailable                                    ; wait for data available
+     964/     7D8 : 98 FA                       jz      _GARWait
+     965/     7DA : C2 0B                       ld      uartStatusWordEnabled(p2)                               ; re-read it and mask out the error bits.
+     966/     7DC : D4 07                       ani     uartSWEFramingError+uartSWEParityError+uartSWEOverRunError
+     967/     7DE : 02                          ccl
+     968/     7DF : F4 FF                       adi     0xFF                                                    ; will set carry unless every bit is zero i.e. no errors
+     969/     7E1 : C2 0E                       ld      uartReceivedData(p2)                                    ; read the byte in.
+     970/     7E3 : 01                          xae                                                             ; put in E ; get P2.L back
+     971/     7E4 : 32                          xpal    p2                                                      ; save in P2
+     972/     7E5 : C4 0F                       ldi     0x0F                                                    ; set P2.H to point to the stack
+     973/     7E7 : 36                          xpah    p2
+     974/     7E8 : 40                          lde                                                             ; restore the read byte
+     975/     7E9 : 3F                          xppc    p3                                                      ; and exit.
+     976/     7EA : 90 E1                       jmp     BIOSGetART
+     977/     7EC :                     
+     978/     7EC :                     ; *******************************************************************************************************************************
+     979/     7EC :                     ;
+     980/     7EC :                     ;                                            Write byte A to the UART, preserves P1
+     981/     7EC :                     ;
+     982/     7EC :                     ; *******************************************************************************************************************************
+     983/     7EC :                     
+     984/     7EC :                     BIOSPutART:
+     985/     7EC : 01                          xae                                                             ; save byte in E
+     986/     7ED : C4 7D                       ldi     uartPortBase / 256 + romPage                            ; save P1, set it to point to the UART
+     987/     7EF : 35                          xpah    p1                                                      
+     988/     7F0 : CE FF                       st      @-1(p2)
+     989/     7F2 : C4 F0                       ldi     uartPortBase & 255
+     990/     7F4 : 31                          xpal    p1 
+     991/     7F5 : CE FF                       st      @-1(p2)
+     992/     7F7 :                     _PARWait:
+     993/     7F7 : C1 0B                       ld      uartStatusWordEnabled(p1)                               ; wait for the status word to indicate we can send data.
+     994/     7F9 : D4 10                       ani     uartSWETransmitBufferEmpty 
+     995/     7FB : 98 FA                       jz      _PARWait
+     996/     7FD : 40                          lde                                                             ; restore data from E
+     997/     7FE : C9 0D                       st      uartDataStrobe(p1)                                      ; send it by writing to the UART
+     998/     800 : C6 01                       ld      @1(p2)                                                  ; restore P1
+     999/     802 : 31                          xpal    p1
+    1000/     803 : C6 01                       ld      @1(p2)
+    1001/     805 : 31                          xpal    p1
+    1002/     806 : 3F                          xppc    p3
+    1003/     807 : 90 E3                       jmp     BIOSPutArt
+    1004/     809 :                     
+    1005/     809 :                     ;
+    1006/     809 :                     ;       Bug (sort of): Because the faster emulator doesn't do effective address addition correctly, then 
+    1007/     809 :                     ;       the read/write of register locations at the start will not wrap round correctly, so saving at 
+    1008/     809 :                     ;       (say) $7003-$10 will save at $6FF3 not $7FF3. 
+    1009/     809 :                     ;       
+    1010/     809 :                     ;       This is an option when compiling the core. It depends whether or not you are decoding the upper
+    1011/     809 :                     ;       four bits of memory (or to be accurate, whether the NS 8154 I/O Chip is mapped at 6F00 as well
+    1012/     809 :                     ;       as its normal position of 7F00). If xFxx always selects the NS8154 this doesn't matter.      
+    1013/     809 :                     ;
+    1014/     809 :                     ;       Possible savings:
+    1015/     809 :                     ;
+    1016/     809 :                     ;       2 LDI / XPAL could assume P3.0 = 0, P3.0 = $70, work out offsets from reset state.       
+    1017/     809 :                     ;               (put in because ROM could be placed actually at $7000 and booted from elsewhere)
+    1018/     809 :                     ;       Remove the G,H,I test and put the I test before implant back in.
+    1019/     809 :                     ;               (it's neater to have A,Q commands not ask for an address)
+    1020/     809 :                     ;       Shorten the status message "SCRUMPI 3 CPU STATUS" suggests JMK not short of ROM space !
+    1021/     809 :                     ;               (consistency)
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 21 - 16/06/21 09:55:47
+
+
+    1022/     809 :                     ;       Lose the intro message.
+    1023/     809 :                     ;               (consistency, though it does have a version number anyway !)
+    1024/     809 :                     ;       Optimise PrintCharacter which suffers from being the first code written.
+    1025/     809 :                     ;       
+    1026/     809 :                     ;       Check some sequential calls where P3.H may not change.
+    1027/     809 :                     ;               (it makes it less error prone when tinkering.)                
+    1028/     809 :                     ;       Make some less important routines not re-entrant (UART/TTY) and ReadHexadecimalSet (never reentered monitor routine)
+    1029/     809 :                     ;               (just nice)
+    1030/     809 :                     ;       Roll rather than scroll the display (e.g. return to top and blank next line on CR)
+    1031/     809 :                     ;               (consistency)
+    1032/     809 :                     ;       Remove check for =/? before asking for 0-7
+    1033/     809 :                     ;               (same as G,H,I)
+    1034/     809 :                     ;       Disable check on 0-7 test, make it just and 7 (= and ?)
+    1035/     809 :                     ;               (same as G,H,I)
+    1036/     809 :                     ;       Remove keyboard debouncing code.
+    1037/     809 :                     ;               (keys will bounce)
+    1038/     809 :                     ;       Remove UART error checking code.
+    1039/     809 :                     ;               (option to use it)
+    1040/     809 :                     ;       Code where P1 is pointed to the registers in status dump could be done by one LD -xx(a)
+    1041/     809 :                     ;               (just messy, also has wrap-12-bit problem in the fast emulator)
+    1042/     809 :                     ;       Remove the TTY/UART routines
+    1043/     809 :                     ;               (the brochure says they are there, the review implies they are not)
+    1044/     809 :                     ;
+    1045/     809 :                     ;       Amendments / Bug Fixes / Improvement
+    1046/     809 :                     ;
+    1047/     809 :                     ;       28-Feb-2014  1.0    First complete and tested and equivalent SCRUMPI 3 BIOS ROM.
+    1048/     809 :                     ;       01-Mar-2014  1.01   Test for G,H,I before asking for address, so pressing A just goes back to the command loop.
+    1049/     809 :                     ;       02-Mar-2014  1.02   Added Echo Enable Flag.
+    1050/     809 :                     ;
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 22 - 16/06/21 09:55:47
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+ BAUD110DELAY :                  3E - | *BIGENDIAN :                      0 - |
+ BIOSGETART :                   7CD C |  BIOSGETTTY :                   7A6 C |
+*BIOSPILEND :                    23 C |  BIOSPRINTCHARACTER :           69B C |
+ BIOSPRINTHEXNOSPACE :          661 C |  BIOSPRINTHEXSPACE :            666 C |
+ BIOSPRINTINLINE :                F C |  BIOSPUTART :                   7EC C |
+ BIOSPUTTTY :                   787 C |  BIOSREADKEY :                  600 C |
+ BOOTPROMPT :                    C3 C | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  0 - |  CHARLINE :                       C - |
+*CONSTPI :        3.141592653589793 - |  CONTINUE :                      C0 C |
+ CURSOR :                        68 - | *DATE :                  "16/06/21" - |
+ DUMPMEMORY :                    E6 C |  ENABLEECHO :                     D - |
+*FALSE :                          0 - | *FULLPMMU :                       1 - |
+ GO :                            B8 C | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *IMPLANT :                      163 C |
+ IMPLANTADDRESS :                 A - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+ KEYBOARDPORT :                 C00 - |  LABELARRAY :                   FE0 - |
+ LISTMEMORY :                    E1 C | *LISTON :                         1 - |
+ LOADREGISTERS :                 23 C | *MACEXP :                         7 - |
+ MAIN :                         10D C | *MOMCPU :                         0 - |
+*MOMCPUNAME :               "SC/MP" - | *NESTMAX :                      100 - |
+*PACKING :                        0 - | *PADDING :                        1 - |
+ PRCEXITUSINGE :                6CD C |  PRINTCHARACTERINE :            69C C |
+ READHEXADECIMALSET :           726 C |  REGISTERBASE :                 FF7 - |
+*RELAXED :                        0 - |  ROMPAGE :                       70 - |
+*SAVEREGISTERS :                 3E C |  SHOWLABELS :                    D9 C |
+ STACKBASE :                     E0 - |  SYSTEMRAM :                    F80 - |
+ TEMPCOUNTER :                    9 - | *TIME :                  "09:55:47" - |
+*TRUE :                           1 - |  UARTDATASTROBE :                 D - |
+ UARTPORT :                     D00 - |  UARTPORTBASE :                 DF0 - |
+ UARTRECEIVEDDATA :               E - |  UARTSTATUSWORDENABLED :          B - |
+ UARTSWEDATAAVAILABLE :           8 - |  UARTSWEFRAMINGERROR :            2 - |
+ UARTSWEOVERRUNERROR :            4 - |  UARTSWEPARITYERROR :             1 - |
+ UARTSWETRANSMITBUFFEREMPTY :    10 - | *VERSION :                     142F - |
+ VIDEORAM :                     E00 - | *Z80SYNTAX :                      0 - |
+ _CHECKCOMMANDS :               139 C |  _DMMLOOP :                      E8 C |
+ _DMMNOTNEWLINE :               106 C |  _GARWAIT :                     7D4 C |
+ _GO :                           E4 C |  _GTTYLOOP :                    7B4 C |
+ _GTTYSKIPSET :                 7BF C |  _GTTYWAIT :                    7A9 C |
+ _IMPCALCULATEOFFSET :          1E9 C |  _IMPCONTROLKEY :               1AB C |
+ _IMPGET :                      18D C |  _IMPISLABEL :                  1C1 C |
+ _IMPNEXT :                     1A5 C |  _IMPSTORECHARACTER :           165 C |
+ _IMPUPDATE :                   167 C |  _IMPUPDATE2 :                  1BF C |
+ _MAIN :                        137 C |  _PARWAIT :                     7F7 C |
+ _PHXMAIN :                     669 C |  _PHXNOTRAILER :                68B C |
+ _PHXPRINTHEX :                 694 C |  _PILNEXTCHARACTER :             17 C |
+ _PRCCLEARBOTTOM :              719 C |  _PRCCLEARSCREEN :              6E0 C |
+ _PRCCONTROL :                  6D1 C |  _PRCCONTROL2 :                 6EE C |
+ _PRCCONTROL3 :                 6FB C | *_PRCEXIT :                     6C7 C |
+ _PRCSCROLL :                   708 C |  _PRCSCROLLLOOP :               70D C |
+ _PRCSHOWCURSORANDSAVECHECKSCROLL :                                     6B7 C |
+ _PRCSHOWCURSORANDSAVEPOSITION :                                        6BB C |
+ _PRCSTAYHOME :                 705 C |  _PTTYEXIT :                    7A3 C |
+ _PTTYLOOP :                    78F C |  _PTTYSETLOOP :                 78C C |
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 23 - 16/06/21 09:55:47
+
+
+ _REDUMPBYTES :                  9B C |  _RESPACENEEDED :                A9 C |
+ _RHSERROR :                    766 C |  _RHSEXIT :                     775 C |
+*_RHSGETHEXKEY :                749 C |  _RHSGOTDIGIT :                 76C C |
+ _RHSISALPHABETICHEX :          762 C |  _RHSMAIN :                     734 C |
+ _RHSSHIFTLOOP :                738 C |  _RKYDEBOUNCERESET :            60F C |
+ _RKYDISCOVERROW :              620 C |  _RKYEXIT :                     655 C |
+ _RKYFINDBIT :                  632 C |  _RKYFOUNDKEY :                 637 C |
+ _RKYGOTASCIIKEY :              649 C |  _RKYNOTPUNCTUATION :           645 C |
+*_RKYRECHECKKEY :               613 C |  _RKYSTORECURRENTVALUE :        611 C |
+ _RKYWAITRELEASE :              600 C |
+
+    130 symbols
+     35 unused symbols
+
+ AS V1.42 Beta [Bld 178] - Source File bios.asm - Page 24 - 16/06/21 09:55:47
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.02 seconds assembly time
+
+   1050 lines source file
+      2 passes
+      0 errors
+      0 warnings

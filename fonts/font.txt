@@ -1,0 +1,716 @@
+// 
+//		DM8678WF Font in original 7 x 9 and 3 x 5
+// 
+ 
+00 	@ 
+ 
+..XXXX. 	.X. 
+.X....X 	X.X 
+X..XX.X 	XXX 
+X.X.X.X 	X... 
+X.X.X.X 	.XX 
+X.XXXXX 
+X	 
+.X....X 
+..XXXX. 
+ 
+01 A 
+
+...A...		.X. 
+..A.A.. 	X.X 
+.A...A.		XXX 
+A.....A 	X.X 
+A.....A		X.X 
+AAAAAAA
+A.....A 	 
+A.....A 
+A.....A 
+ 
+02 B 
+XXXXX..		XXX
+.X...X.		X.X 
+.X....X 	XX 
+.X...X 		X.X
+.XXXX 		XXX
+.X...X. 
+.X....X 
+.X...X 
+XXXXX 
+ 
+03 C 
+..XXXX..	.CC 
+.X....X. 	C.
+X 			C
+X 			C..
+X 			.CC
+X 
+X 
+.X....X. 
+..XXXX.. 
+ 
+04 D 
+XXXXX.. 	DD
+.X...X. 	D.D
+.X....X 	D.D
+.X....X 	D.D
+.X....X 	DD
+.X....X 
+.X....X 
+.X...X 
+XXXXX 
+ 
+05 E 
+XXXXXXX  	EEE
+X 			E
+X 			EEE
+X 			E
+XXXXX 		EEE
+X 
+X 
+X 
+XXXXXXX 
+ 
+06 F 
+XXXXXXX 	FFF
+X 			F
+X 			FFF
+X 			F
+XXXXX 		F
+X 
+X 
+X 
+X 
+ 
+07 G 
+..XXXX 		.GG
+.X....X 	G..
+X 			G.G
+X 			G.G
+X 			.GG
+X...XXX 
+X.....X 
+.X...XX 
+..XXX.X 
+ 
+08 H 
+X.....X 	H.H
+X.....X 	H.H
+X.....X 	HHH
+X.....X 	H.H
+XXXXXXX 	H.H
+X.....X 
+X.....X 
+X.....X 
+X.....X 
+ 
+09 I 
+..XXX 		III
+...X 		.I
+...X 		.I
+...X 		.I
+...X 		III
+...X 
+...X 
+...X 
+..XXX 
+ 
+10 J 
+......X 	..X
+......X 	..X
+......X 	..X
+......X 	X.X
+......X 	XXX
+......X 
+X.....X 
+.X...X 
+..XXX 
+ 
+11 K 
+X.....X 	X.X
+X....X. 	X.X
+X...X 		XX
+X..X 		X.X
+X.X 		X.X
+XX.X 
+X...X 
+X....X 
+X.....X 
+ 
+12 L 		
+X 			X
+X 			X
+X 			X
+X 			X
+X 			XXX
+X
+X
+X 
+XXXXXXX 
+ 
+13 M 		
+X.....X 	X.X
+X.....X 	XXX
+XX...XX 	XXX
+X.X.X.X 	X.X
+X..X..X 	X.X
+X..X..X 
+X..X..X 
+X.....X 
+X.....X 
+ 
+14 N 
+X.....X 	XXX
+X.....X 	X.X
+XX....X 	X.X
+X.X...X 	X.X
+X..X..X 	X.X
+X...X.X 
+X....XX 
+X.....X 
+X.....X 
+ 
+15 O 
+..XXX 		.X
+.X...X 		X.X
+X.....X 	X.X
+X.....X 	X.X
+X.....X 	.X
+X.....X 
+X.....X 
+.X...X 
+..XXX 
+ 
+16 P 
+XXXXXX 		XXX
+X.....X 	X.X
+X.....X 	XXX
+X.....X 	X
+XXXXXX 		X
+X 
+X 
+X 
+X 
+ 
+17 Q 
+..XXX 		XXX
+.X...X 		X.X
+X.....X 	XXX
+X.....X 	..X
+X.....X 	..X
+X..X..X 
+X...X.X 
+ X...X 
+  XXX.X 
+ 
+18 R 
+XXXXXX 		XXX
+X.....X 	X..
+X.....X 	X
+X.....X 	X..
+XXXXXX 		X..
+X..X 
+X...X 
+X....X 
+X.....X 
+ 
+19 S 
+..XXXX 		XXX
+.X....X 	X
+X 			XXX
+.X 			..X
+..XXX 		XXX
+.....X 
+......X 
+.X...X 
+..XXX 
+ 
+20 T 		
+XXXXXXX 	XXX
+X..X..X 	.X
+...X 		.X
+...X 		.X
+...X 		.X
+...X 
+...X 
+...X 
+...X
+
+21 U 
+X.....X 	X.X
+X.....X 	X.X
+X.....X 	X.X
+X.....X 	X.X
+X.....X 	XXX
+X.....X 
+X.....X
+.X...X
+..XXX
+
+22 V 
+X.....X 	X.X
+X.....X 	X.X
+X.....X 	X.X
+.X...X 		X.X
+.X...X 		.X
+.X...X
+..X.X
+..X.X
+...X 
+ 
+23 W 
+X.....X 	X.X
+X.....X 	X.X
+X.....X 	XXX
+X.....X 	XXX
+X..X..X 	X.X
+X..X..X
+X..X..X
+X.X.X.X
+.X...X
+
+24 X 
+X.....X 	X.X
+X.....X  	X.X
+.X...X 		.X
+..X.X 		X.X
+...X 		X.X
+..X.X
+.X...X
+X.....X 
+X.....X 
+ 
+25 Y 
+X.....X 	X.X
+X.....X 	X.X
+.X...X 		X.X
+..X.X 		.X
+...X 		.X
+...X
+...X
+...X 
+...X
+
+26 Z 
+XXXXXXX 	XXX
+......X 	..X
+.....X 		.X
+....X 		X
+...X 		XXX
+..X 
+.X 
+X 
+XXXXXXX 
+ 
+27 [ 
+XXXXXXX 	XXX
+X 			X
+X 			X
+X 			X
+X 			XXX
+X 
+X 
+X 
+XXXXXXX 
+ 
+ 
+28 \ 
+. 			X 
+X 			X
+.X 			.X
+..X 		..X
+...X 		..X
+....X 
+.....X 
+......X 
+. 
+ 
+29 [ 
+XXXXXXX 	XXX
+......X 	..X
+......X 	..X
+......X 	..X
+......X 	XXX
+......X 
+......X 
+......X 
+XXXXXXX 
+ 
+30 ^ 
+. 			.
+. 			.X
+. 			X.X
+....X 		.
+...X.X 		.
+..X...X 
+.X.....X 
+. 
+. 
+ 
+31 _ 
+. 			.
+. 			.
+. 			.
+. 			.
+. 			XXX
+. 
+.
+. 
+XXXXXXX 
+ 
+32 
+. 			.
+. 			.	
+. 			.
+. 			.
+. 			.
+. 
+. 
+. 
+. 
+ 
+33 ! 
+...X 		.X
+...X 		.X
+...X 		.X
+...X 		.
+...X 		.X
+...X 
+. 
+. 
+...X 
+ 
+34 " 
+.X..X.. 	X.X
+.X..X.. 	X.X
+.X..X.. 	.
+.X..X.. 	.
+. 			.
+. 
+. 
+. 
+. 
+ 
+35 # 		
+..X.X 		.X.
+..X.X 		XXX
+XXXXXXX	 	.X.
+..X.X 	 	XXX
+..X.X 		.X.
+..X.X
+XXXXXXX 
+..X.X 
+..X.X 
+ 
+36 $ 
+..X.X 		XXX
+.XXXXXX 	XX.
+X.X.X 		XXX
+X.X.X 		.XX
+.XXXXX 		XXX
+..X.X.X 
+..X.X.X 
+XXXXXX 
+..X.X 
+ 
+37 % 		
+XX 			X.X
+XX....X 	..X
+.....X 		.X
+....X 		X
+...X 		X.X
+..X 
+.X 
+X....XX 
+.....XX 
+ 
+38 & 
+.XX. 		.X.
+X..X 		X.X
+X..X 		.XX
+.XX 		X.X
+.XX 		.XX
+X..X.X 		
+X...XX 
+X....X 
+.XXXX.X 
+ 
+39 ' 
+ 
+...XX.. 	.X
+...XX.. 	.X
+...X 		X
+..X 		.
+. 			.
+. 
+. 
+. 
+. 
+ 
+40 ( 		
+....X 		.X
+...X 		X
+..X 		X
+..X 		X
+..X 		.X
+..X 
+..X 
+...X 
+....X 
+ 
+41 ) 
+..X 		X
+...X 		.X
+....X 		.X
+....X 		.X
+....X 		X
+....X 
+....X 
+...X 
+..X 
+ 
+42 * 
+...X 		X.X
+X..X..X     .X.
+.X.X.X 		XXX
+..XXX 		.X.
+...X 		X.X
+..XXX 
+.X.X.X 
+X..X..X 
+...X 
+ 
+43 + 		
+. 			.
+...X 		.X
+...X 		XXX
+...X 		.X
+XXXXXXX 	.
+...X 
+...X 
+...X 
+. 
+ 
+44 , 
+. 			.
+. 			.
+. 			.
+. 			.X
+. 			X
+. 
+...X 
+...X 
+..X 
+ 
+45 - 
+. 			.
+. 			.
+. 			XXX
+. 			.
+XXXXXXX 	.
+. 
+. 
+. 
+. 
+ 
+46 . 
+ 
+. 			.
+. 			.
+. 			.
+. 			.
+. 			.X
+. 
+. 
+. 
+...X 
+ 
+47 / 
+
+.			..X 
+......X 	..X
+.....X 		.X
+....X 		X
+...X 		X
+..X 		
+.X 
+X 
+. 
+ 
+48 0 
+ 
+..XXX 		.X
+.X...X 		X.X
+X....XX 	X.X
+X...X.X 	X.X
+X..X..X 	.X
+X.X...X 
+XX....X 
+.X...X 
+..XXX 
+ 
+ 
+49 1 
+...X 		.X
+..XX 		XX
+.X.X 		.X
+...X 		.X
+...X 		XXX
+...X 
+...X 
+...X 
+.XXXXX 
+ 
+50 2 
+.XXXXX. 	XX
+X.....X 	..X
+......X 	.X
+.....X 		X
+..XXX 		XXX
+.X 
+X 
+X 
+XXXXXXX 
+ 
+51 3 
+.XXXXX. 	XX.
+X.....X 	..X
+......X 	XX
+......X 	..X
+...XXX 		XX
+......X 
+......X 
+X.....X 
+.XXXXX 
+ 
+52 4 
+....X 		..X
+...XX 		.XX
+..X.X 		X.X
+.X..X 		XXX
+X...X 		..X 
+X...X 
+XXXXXXX 
+....X 
+....X 
+ 
+53 5 
+XXXXXXX 	XXX
+X 			X
+X 			XX
+X 			..X
+XXXXXX 		XX
+......X 
+......X 
+X.....X 
+.XXXXX 
+ 
+54 6 
+..XXXX 		.XX
+.X....X 	X
+X 			XX
+X 			X.X
+X.XXXX 		XX
+XX....X 
+X.....X 
+X.....X 
+.XXXXX 
+ 
+55 7 
+XXXXXXX 	XXX
+......X 	..X
+......X 	.X
+.....X 		X
+....X 		X
+...X 
+..X 
+.X 
+X 
+ 
+56 8 
+.XXXXX 		.X.
+X.....X 	X.X
+X.....X 	.X.
+.X...X 		X.X
+..XXX 		.X
+.X...X 
+X.....X 
+X.....X 
+.XXXXX 
+ 
+57 9 
+.XXXXX 		.X
+X.....X 	X.X
+X.....X  	.XX
+X....XX 	..X
+.XXXX.X 	XX
+......X 
+......X 
+X....X 
+.XXXX 
+ 
+58 : 
+. 			.
+. 			.X
+. 			.
+...X 		.X
+. 			.
+. 
+...X 
+. 
+. 
+ 
+59 ; 		
+. 			.
+. 			.X
+. 			.
+...X 		.X
+. 			X
+. 
+...X 
+...X 
+..X 
+ 
+60 < 
+.....X 		..X
+....X 		.X
+...X 		X
+..X 		.X
+.X 			..X
+..X 
+...X 
+....X 
+.....X 
+ 
+61 = 
+. 			.
+. 			XXX
+. 			.
+XXXXXXX 	XXX
+. 			.
+. 
+XXXXXXX 
+. 
+. 
+ 
+62 > 
+.X 			X
+..X 		.X
+...X 		..X
+....X 		.X
+.....X 		X
+....X 
+...X 
+..X 
+.X 
+ 
+63 ? 
+.XXXXX 		XX.
+X.....X 	..X
+......X  	.X
+......X 	.
+....XX 		.X
+...X 
+...X 
+. 
+...X 
+ 

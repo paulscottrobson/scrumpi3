@@ -1,0 +1,80 @@
+; first 64 bytes
+
+
+000 	3F 			XPPC 3 						; never executed
+001 	C4 7F 		LDI  $7F 					; P2 = 7F90 (8154 RAM)
+003 	36 			XPAH 2
+004 	C4 90 		LDI $90
+006 	32 			XPAL 2
+007 	C4 77		LDI $77 					; P3 = 77DC (Write String)
+009 	37 			XPAH 3
+00A 	C4 DC 		LDI $DC
+00C 	33 			XPAL 3
+00D 	3F 			XPPC 3
+
+00E 	01 			CLS 						; String to print.
+00F 	53			S
+010 	43 			C
+011		52			R
+012 	55			U
+013 	4D			M
+014 	50 			P
+015 	49 			I
+016 	20 			sp
+017 	33 			3
+018 	0D 			ENTER
+
+019 	04     		end marker
+01A 	C4 	77 		LDI $77 					; would be better done with a loop round ?
+01C 	37			XPAH 3 						; PC = 77DC (Write Syring)
+01D 	C4 	DC 		LDI $DC
+01F 	33 			XPAL 3
+020 	3F 			XPPC 3
+
+021 	0D 			Return
+021 	43 			C
+022 	4F 			O
+023 	4D 			M
+024 	4d 			M
+025 				A
+026 				N
+027 				D
+028 				?
+029 	20 			Space
+02A 	04 			End
+02B 	C4 76 		LDI $76 					; probably calling keyboard read routine. 
+02D 	37 			XPAH 3 
+02F 	C4 ? 		LDI ?
+
+; nothing useful other than there must be something at 7DC ? (PROM)
+
+7D1 	?? 	8C 
+7D2 	03 			CCL 						; Clear Carry 	
+7D3 	C4 DE 		LDI $DE 					; Store result somewhere
+7D5 	C9 00 		ST 0(1)
+7D7 	C2 FD 		LD -3(2) 					; usually points to RAM
+7D9		31 			XPAL 1 						; update P1 and go somewhere.
+7DA 	90 87 		JMP (LONG WAY BACK)
+7DC  	3F 			XPPC 3 						; return.
+7DD 	C7 01 		LD @1(3) 					; P3 is old address (e.g. of XPPC3) bump to first character
+7DF 	C4 77 		LDI $77 					; Set P3 to $7768 (print char)
+7E1 	37 			XPAH 3 		
+7E2  	35 			XPAH 1 						; save old return address (string pointer) in P1.			
+7E3 	CA FE 		ST -2(2) 					; save old P1 in -2(RAM)
+7E5 	C4 68 		LDI $68 			
+7E7 	33 			XPAL 3
+7E8 	31 			XPAL 1 						; save old P1 in -1(RAM)
+7E9 	CA FF 		ST -1(2)
+7EB 	C5 01 		LD @1(1) 					; read char to print and bump P1
+7ED 	3F 			XPPC 3 						; output it.
+7EE 	C1 FF 		LD -1(1) 					; re-read the last character
+7F0 	E4 04 		XRI 04 						; if not EOL marker
+7F2 	9C F7 		JNZ 7EB 					; do next character
+7F4 	C2 FF 		LD -1(1) 					; restore P1
+7F6 	31 			XPAL 1 						; and put the return address (byte after 04) back in P3
+7F7 	33 			XPAL 3 					
+7F8 	C2 FE 		LD -2(1)
+7FA 	35 			XPAH 1
+7FB 	37 			XPAH 3
+7FC 	C7 FF 		LD @-1(3) 					; decrement P3 because it pre-increments back on return.
+7FE 	90 DC 		JMP <7DC>					; return and make re-entrant (sets PC to 7DB then increments before exec)	 	
