@@ -30,7 +30,8 @@ endif
 APPNAME = scrumpi3$(APPSTEM)
 
 SOURCES = 	framework$(S)main.o framework$(S)gfx.o framework$(S)debugger.o \
-			src$(S)sys_processor.o src$(S)hardware_uart.o src$(S)hardware_8154.o \
+			src$(S)sys_processor.o \
+			src$(S)hardware_kbd.o src$(S)hardware_uart.o src$(S)hardware_8154.o \
 			src$(S)sys_debug_scrumpi.o
   
 CC = g++

@@ -48,7 +48,7 @@ static LONG32 cycles;																// Cycle Count.
 static BYTE8 operand;
 
 // *******************************************************************************************************************************
-//											 Memory and I/O read and write macros.
+//									Memory and I/O read and write macros.
 // *******************************************************************************************************************************
 
 #define readByte(a) 	_Read(a)													// Basic Read
@@ -63,6 +63,27 @@ static inline BYTE8 _Read(WORD16 address);											// Need to be forward defin
 static inline void _Write(WORD16 address,BYTE8 data);								// used in support functions.
 
 // *******************************************************************************************************************************
+//										Build Keyboard Byte
+// *******************************************************************************************************************************
+
+static BYTE8 readKeyboard(WORD16 address) {
+	BYTE8 retVal = 0;
+	if (HWReadKey(HWK_USER)) retVal |= 0x80;										// Bit 7 User
+	if (HWReadKey(HWK_PUNC)) retVal |= 0x40;										// Bit 6 Punc
+	if (HWReadKey(HWK_ALPHA2)) retVal |= 0x20;										// Bit 5 Alpha 2
+	if (HWReadKey(HWK_ALPHA1)) retVal |= 0x10;										// Bit 4 Alpha 1
+	BYTE8 row,column;
+	for (row = 0;row < 4;row++) {													// Scan rows
+		if (address & (0x08 >> row)) {												// Row bit set ?
+			for (column = 0;column < 4;column++)									// Scan each column
+				if (HWReadKey(column + row * 4)) 									// If key pressed.
+					retVal |= (0x08 >> column);										// seet corresponding column bit.
+		}
+	}
+	return retVal;
+}
+
+// *******************************************************************************************************************************
 //											   Read and Write Inline Functions
 // *******************************************************************************************************************************
 
@@ -70,7 +91,7 @@ static inline BYTE8 _Read(WORD16 address) {
 	address &= 0xFFF; 																// only 12 bits relevant.
 	if (address < 0xC00 || address >= 0xF80) return ramMemory[address];				// RAM, ROM, 8154 RAM.
 	if ((address >> 8) == 0xE) return ramMemory[address];							// Video RAM.
-	if ((address >> 8) == 0xC) return 0;											// Cxx Keyboard
+	if ((address >> 8) == 0xC) return readKeyboard(address);						// Cxx Keyboard
 	if ((address >> 8) == 0xD) return HWReadUART(address & 0xFF);					// UART (D00-DFF)
 	if ((address >> 7) == 0x1E) return HWRead8154(address & 0x7F);					// NS8154 (F00-F7F)
 	return 0x00;																	// Return float low lines.
@@ -99,7 +120,6 @@ static void CPULoadChunk(FILE *f,BYTE8* memory,int count);
 // *******************************************************************************************************************************
 //														Reset the CPU
 // *******************************************************************************************************************************
-
 
 void CPUReset(void) {
 
