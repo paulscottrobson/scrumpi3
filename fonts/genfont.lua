@@ -42,7 +42,7 @@ function dumpROM(binaryData,includeFile,constName)
 	print("Converting to "..includeFile)
 	local h = io.open(includeFile,"w")	
 	assert(h ~= nil,"Can't write "..includeFile)
-	h:write("static BYTE8CONST "..constName.."[] = {\n")
+	h:write("static BYTE8 "..constName.."[] = {\n")
 	for n = 0,binaryData.size-1 do
 		assert(binaryData[n] ~= nil)
 		h:write(("0x%02x"):format(binaryData[n]))

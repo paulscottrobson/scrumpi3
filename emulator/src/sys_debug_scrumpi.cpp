@@ -18,6 +18,7 @@
 #include "debugger.h"
 
 #include "scmp/scmp_mnemonics.h"
+#include "font_large.h"
 
 #define DBGC_ADDRESS 	(0x0F0)														// Colour scheme.
 #define DBGC_DATA 		(0x0FF)														// (Background is in main.c)
@@ -62,7 +63,7 @@ void DBGXRender(int *address,int showDisplay) {
 
 	for (int row = 0;row < 14;row++) {
 		int isPC = (p == ((s->p0+1) & 0xFFFF));										// Tests.
-		int isBrk = (p == (address[3]+1) & 0xFFFF);
+		int isBrk = (p == (address[3]) & 0xFFFF);
 		GFXNumber(GRID(0,row),p,16,4,GRIDSIZE,isPC ? DBGC_HIGHLIGHT:DBGC_ADDRESS,	// Display address / highlight / breakpoint
 																	isBrk ? 0xF00 : -1);
 		opc = CPUReadMemory(p);p = (p + 1) & 0xFFFF;								// Read opcode.
@@ -79,29 +80,46 @@ void DBGXRender(int *address,int showDisplay) {
 			strcat(temp,at+2);
 			strcpy(buffer,temp);
 		}
+		at = strchr(buffer,'|');
+		if (at != NULL) *at = '@';
 		GFXString(GRID(5,row),buffer,GRIDSIZE,isPC ? DBGC_HIGHLIGHT:DBGC_DATA,-1);	// Print the mnemonic
 	}
 
-	int xs = 50;
-	int ys = 32;
+	int xs = 32;
+	int ys = 8;
 	int xSize = 3;
-	int ySize = 3;
+	int ySize = 4;
 	if (showDisplay) {
 		renderCount++;
-		int x1 = WIN_WIDTH/2-xs*xSize*8/2;
-		int y1 = WIN_HEIGHT/2-ys*ySize*8/2;
+		int x1 = WIN_WIDTH/2-xs*xSize*9/2;
+		int y1 = WIN_HEIGHT/2-ys*ySize*16/2;
 		int cursorPos = 0;
 		SDL_Rect r;
 		int b = 8;
-		r.x = x1-b;r.y = y1-b;r.w = xs*xSize*8+b*2;r.h=ys*ySize*8+b*2;
+		r.x = x1-b;r.y = y1-b;r.w = xs*xSize*9+b*2;r.h=ys*ySize*16+b*2;
 		GFXRectangle(&r,0xFFFF);
 		b = b - 4;
-		r.x = x1-b;r.y = y1-b;r.w = xs*xSize*8+b*2;r.h=ys*ySize*8+b*2;
+		r.x = x1-b;r.y = y1-b;r.w = xs*xSize*9+b*2;r.h=ys*ySize*16+b*2;
 		GFXRectangle(&r,0);
 		for (int x = 0;x < xs;x++) 
 		{
 			for (int y = 0;y < ys;y++)
 		 	{
+		 		int ch = CPUReadMemory(0x7E00+x+y*32);
+		 		int rvs = (ch & 0x80) ? 1 : 0;
+		 		ch = ch & 0x3F;
+		 		r.w = xSize;r.h = ySize;
+		 		for (int yr = 0;yr < 9;yr++) {
+			 		r.x = x1 + x * 9 * xSize;
+			 		r.y = y1 + (y * 16 + yr)*ySize;
+			 		int bits = _largeFont[ch*9+yr];
+			 		if (rvs) bits ^= 0xFF;
+			 		while (bits != 0) {
+			 			if (bits & 0x80) GFXRectangle(&r,0xF80);
+			 			r.x += r.w;
+			 			bits = (bits << 1) & 0xFF;
+			 		}
+		 		}
 		 	}
 		}
 	}
