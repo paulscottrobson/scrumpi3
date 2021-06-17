@@ -31,7 +31,9 @@ static void writeIOFlags(BYTE8 flags) {
 }
 
 static BYTE8 readSenseLines(void) {
-	return 0;
+	BYTE8 senseLines = 0;
+	if (HWReadKey(HWK_INT)) senseLines = 1;
+	return senseLines;
 }
 
 

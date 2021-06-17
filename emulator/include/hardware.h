@@ -17,7 +17,10 @@
 #define HWK_ALPHA1 	(0xF2)
 #define HWK_ALPHA2 	(0xF3)
 
+#define HWK_INT 	(0xFF)
+
 BYTE8 HWReadKey(BYTE8 keyID);
+int HWProcessKey(int keyState,int runMode);
 
 void HWWrite8154(BYTE8 offset,BYTE8 data);
 BYTE8 HWRead8154(BYTE8 offset);

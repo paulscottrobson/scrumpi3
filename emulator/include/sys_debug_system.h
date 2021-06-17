@@ -14,6 +14,7 @@
 #ifndef _DEBUG_SYS_H
 #define _DEBUG_SYS_H
 #include "sys_processor.h"
+#include "hardware.h"
 
 #define WIN_TITLE 		"Scrumpi 3 Emulator"									// Initial Window stuff
 #define WIN_WIDTH		(40*8*4)
@@ -39,7 +40,7 @@
 #define DEBUG_RAMSTART 		(0x7F80)												// Initial RAM address for debugger.
 #define DEBUG_SHIFT(d,v)	((((d) << 4) | v) & 0xFFFF)								// Shifting into displayed address.
 
-#define DEBUG_KEYMAP(k,r)	(k)
+#define DEBUG_KEYMAP(k,r)	HWProcessKey(k,r)
 
 void DBGXRender(int *address,int isRunMode);										// Render the debugger screen.
 BYTE8 DRVGFXHandler(BYTE8 key,BYTE8 isRunMode);

@@ -11,7 +11,30 @@
 
 #include "sys_processor.h"
 #include "hardware.h"
+#include "gfx.h"
+
+static int currentKey = 0;
+
+//*******************************************************************************************************
+//							Process keystrokes/releases from debugger
+//*******************************************************************************************************
+
+int HWProcessKey(int keyState,int runMode) {
+
+	if (keyState >= 0) printf("%d %d\n",GFXToASCII(keyState,-1),runMode);
+	return keyState;
+}
+
+//*******************************************************************************************************
+//										Scan keyboard
+//*******************************************************************************************************
 
 BYTE8 HWReadKey(BYTE8 keyID) {
-	return 0;
+	BYTE8 key = 0;
+	switch (keyID) {
+		case HWK_INT:
+			key = GFXIsKeyPressed(GFXKEY_RETURN);
+			break;
+	}
+	return key;
 }
