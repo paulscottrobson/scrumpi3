@@ -610,7 +610,7 @@ _RKYGotASCIIKey:
         ld      -1(p2)                                                  ; get the current debounce value
         xre                                                             ; is it the same as the key just read ?
         jz      _RKYExit
-        xre                                                             ; get the current status back.
+                xre                                                             ; get the current status back.
         jnz     _RKYDebounceReset                                       ; if different and non-zero it has not stabilised, so restart.
         lde
         jmp     _RKYStoreCurrentValue                                   ; store that and go round again until we get 2 non-zero reads the same.
@@ -1001,15 +1001,7 @@ _PARWait:
         xpal    p1
         xppc    p3
         jmp     BIOSPutArt
-
-;
-;       Bug (sort of): Because the faster emulator doesn't do effective address addition correctly, then 
-;       the read/write of register locations at the start will not wrap round correctly, so saving at 
-;       (say) $7003-$10 will save at $6FF3 not $7FF3. 
-;       
-;       This is an option when compiling the core. It depends whether or not you are decoding the upper
-;       four bits of memory (or to be accurate, whether the NS 8154 I/O Chip is mapped at 6F00 as well
-;       as its normal position of 7F00). If xFxx always selects the NS8154 this doesn't matter.      
+ 
 ;
 ;       Possible savings:
 ;
